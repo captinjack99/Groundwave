@@ -300,11 +300,19 @@ if(BUILD_TESTS)
     add_executable(dred_test tests/dred_test.cpp)
     target_link_libraries(dred_test dsca_core)
 
+    # Value-sanity sweep of the GUI bitrate/subcarrier readouts: asserts the
+    # displayed ComputedParams match the modem's real allocation and stay
+    # physically sane across every modcod / FFT / sample-rate / signal-BW combo
+    # (guards the size_t-underflow "bitrate through the roof" class of bug).
+    add_executable(computed_params_test tests/computed_params_test.cpp)
+    target_link_libraries(computed_params_test dsca_core)
+
     enable_testing()
     foreach(T loopback_test frame_test fec_test codec_test modem_test
               gui_test dsp_primitives_test integration_test ldpc_encoder_test
               reed_solomon_test side_reconstructor_test cp_window_test
-              hierarchical_test ldpc_protograph_test sfo_test pls_test dred_test)
+              hierarchical_test ldpc_protograph_test sfo_test pls_test dred_test
+              computed_params_test)
         add_test(NAME ${T} COMMAND ${T})
     endforeach()
 endif()

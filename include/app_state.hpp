@@ -376,19 +376,36 @@ struct ComputedParams {
             static_cast<double>(o.sample_rate) / o.fft_size);
         c.symbol_duration_ms = 1000.f * static_cast<float>(o.symbolDuration());
 
-        // Guard bands — pull from OFDMParams helpers so the auto-default
-        // (sample-rate-relative) matches what the modulator/demodulator use.
-        size_t gl = o.guardLeft();
-        size_t gr = o.guardRight();
-        size_t usable = (o.fft_size / 2) - gl - gr - (o.dc_null ? 1 : 0);
-
-        // Pilots: every pilot_spacing subcarriers
-        size_t pilots = (usable + o.pilot_spacing - 1) / o.pilot_spacing;
+        // Count data / pilot subcarriers EXACTLY as the modem does
+        // (computeAllocation() in ofdm.cpp is the single source of truth): the
+        // active region is the FULL FFT span [guardLeft, fft_size - guardRight);
+        // DC (bin 0) is skipped when nulled; every pilot_spacing-th active
+        // carrier is a pilot, the rest data.
+        //
+        // This replaces a divergent hand-rolled formula that (a) used
+        // fft_size/2 (half the real count) and (b) UNDERFLOWED — `usable` is a
+        // size_t, and when the auto-guard maxed out at fft_size/4 per side,
+        // fft_size/2 - guardLeft - guardRight - dc went negative and wrapped to
+        // ~1.8e19, sending the displayed bitrate to absurd values. Because the
+        // guard size depends on the subcarrier spacing (= sample_rate/fft_size),
+        // changing the sample rate is exactly what tripped it.
+        size_t gl  = o.guardLeft();
+        size_t gr  = o.guardRight();
+        size_t end   = (o.fft_size > gr) ? (o.fft_size - gr) : 0;
+        size_t start = (gl < end) ? gl : end;
+        size_t psp   = (o.pilot_spacing > 0) ? o.pilot_spacing : 1;
+        size_t pilots = 0, data = 0, carrier_count = 0;
+        for (size_t i = start; i < end; ++i) {
+            if (o.dc_null && i == 0) continue;              // DC bin
+            if (carrier_count % psp == 0) ++pilots; else ++data;
+            ++carrier_count;
+        }
+        size_t active = data + pilots;
         c.pilot_subcarriers  = pilots;
-        c.data_subcarriers   = (usable > pilots) ? usable - pilots : 0;
-        c.active_subcarriers = usable;
-        c.pilot_overhead_pct = usable > 0
-            ? 100.f * static_cast<float>(pilots) / static_cast<float>(usable)
+        c.data_subcarriers   = data;
+        c.active_subcarriers = active;
+        c.pilot_overhead_pct = active > 0
+            ? 100.f * static_cast<float>(pilots) / static_cast<float>(active)
             : 0.f;
 
         uint8_t bps = bitsPerSymbol(o.modulation);
