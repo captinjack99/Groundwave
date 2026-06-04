@@ -200,7 +200,12 @@ inline HierThreshold computeHierThreshold(
     uint8_t total  = hp_bps + lp_bps;
     if (hp_bps == 0 || lp_bps == 0) return h;
 
-    float alpha = hier.alpha;
+    // Guard against a non-physical alpha (<= 0, or NaN) from a hand-edited or
+    // loaded config: 20*log10(alpha) and the LP-penalty log10 would otherwise
+    // be -inf / NaN and poison the displayed HP/LP thresholds. alpha is the
+    // HP/LP distance ratio (>= 1 physically; 1 = uniform). The dialog clamps to
+    // [1,4], but config load does not, so be self-defending here.
+    float alpha = (hier.alpha > 1e-2f) ? hier.alpha : 1e-2f;
 
     // HP layer: effectively decoding a reduced-order constellation
     // The HP quadrant spacing is α times larger than LP spacing

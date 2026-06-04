@@ -615,6 +615,12 @@ inline bool deserializeConfig(const std::string& json, AppState& state) {
                 state.hier.mode = HierarchicalMode::None;
                 state.hier.enabled = false;
             }
+            // hier.alpha is the HP/LP distance ratio (>= 1 physically; the
+            // dialog clamps to [1,4]). A non-physical value (<= 0, NaN, or
+            // absurdly large) feeds 20*log10(alpha) in the link-budget HP/LP
+            // threshold math and yields inf/NaN readouts — reset to the default.
+            if (!(state.hier.alpha >= 1.0f && state.hier.alpha <= 8.0f))
+                state.hier.alpha = 2.0f;
         }
 
         // Reinit spectrum freq bins

@@ -18,6 +18,8 @@
 #include "app_state.hpp"
 #include "ofdm.hpp"
 #include "types.hpp"
+#include "snr_calculator.hpp"
+#include "hierarchical_mod.hpp"
 
 #include <cstdio>
 #include <cmath>
@@ -28,6 +30,14 @@ using namespace dsca;
 namespace {
 int g_fail = 0;
 long g_cases = 0;
+
+// Lightweight check for the threshold sweeps (no OFDMParams context).
+void chk(bool ok, const char* what, double v) {
+    if (!ok) {
+        if (g_fail < 25) std::printf("  [FAIL] %s  value=%.6g\n", what, v);
+        ++g_fail;
+    }
+}
 
 void fail(const char* what, const OFDMParams& o, FECRate fec, float bw, double val) {
     if (g_fail < 25) {
@@ -118,7 +128,65 @@ int main() {
         }
     }
 
-    std::printf("Swept %ld configurations.\n", g_cases);
+    std::printf("Swept %ld ComputedParams configurations.\n", g_cases);
+
+    // ---- Link-budget core: computeThreshold(mod, fec) ----
+    const FECRate all_fecs[] = {
+        FECRate::Rate_1_4, FECRate::Rate_1_3, FECRate::Rate_2_5, FECRate::Rate_1_2,
+        FECRate::Rate_3_5, FECRate::Rate_2_3, FECRate::Rate_3_4, FECRate::Rate_4_5,
+        FECRate::Rate_5_6, FECRate::Rate_8_9, FECRate::Rate_9_10};
+    long thr_cases = 0;
+    for (Modulation mod : mods)
+    for (FECRate fec : all_fecs) {
+        ModCodThreshold t = computeThreshold(mod, fec);
+        ++thr_cases;
+        float se_expect = bitsPerSymbol(mod) * codeRateValue(fec);
+        chk(std::isfinite(t.spectral_eff) && std::fabs(t.spectral_eff - se_expect) < 1e-3f,
+            "threshold.spectral_eff", t.spectral_eff);
+        chk(std::isfinite(t.shannon_limit_db) && t.shannon_limit_db > -20.f &&
+            t.shannon_limit_db < 60.f, "threshold.shannon_limit_db", t.shannon_limit_db);
+        chk(std::isfinite(t.impl_loss_db) && t.impl_loss_db >= 0.f && t.impl_loss_db < 15.f,
+            "threshold.impl_loss_db", t.impl_loss_db);
+        chk(std::isfinite(t.threshold_db) && t.threshold_db > -20.f && t.threshold_db < 70.f,
+            "threshold.threshold_db", t.threshold_db);
+        // Eb/N0 derivation as the link-budget panel computes it.
+        float se = std::max(t.spectral_eff, 1e-6f);
+        float eb_n0 = t.threshold_db - 10.f * std::log10(se);
+        chk(std::isfinite(eb_n0) && eb_n0 > -30.f && eb_n0 < 70.f, "eb_n0", eb_n0);
+    }
+    std::printf("Swept %ld computeThreshold configurations.\n", thr_cases);
+
+    // ---- Hierarchical HP/LP thresholds: computeHierThreshold(...) ----
+    // alpha sweep INCLUDING out-of-UI-range values, because a loaded/hand-edited
+    // config is not range-checked: alpha <= 0 would feed 20*log10(alpha) and
+    // produce NaN/-inf in the displayed HP/LP thresholds.
+    const float alphas[] = {-1.0f, 0.0f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 100.0f};
+    // Custom HP/LP splits across the supported constellation orders.
+    const int hp_lp[][2] = {{1,1},{2,2},{2,4},{4,2},{4,4},{2,6},{6,2},{4,6},
+                            {2,8},{8,2},{6,6}};
+    long hier_cases = 0;
+    for (auto& sp : hp_lp)
+    for (FECRate hp_fec : all_fecs)
+    for (FECRate lp_fec : all_fecs)
+    for (float a : alphas) {
+        HierarchicalConfig hc;
+        hc.enabled = true;
+        hc.mode    = HierarchicalMode::Custom;
+        hc.hp_bits = static_cast<uint8_t>(sp[0]);
+        hc.lp_bits = static_cast<uint8_t>(sp[1]);
+        hc.alpha   = a;
+        HierThreshold h = computeHierThreshold(hc, hp_fec, lp_fec);
+        ++hier_cases;
+        chk(std::isfinite(h.hp_threshold_db), "hier.hp_threshold_db", h.hp_threshold_db);
+        chk(std::isfinite(h.lp_threshold_db), "hier.lp_threshold_db", h.lp_threshold_db);
+        chk(std::isfinite(h.hp_spectral_eff) && h.hp_spectral_eff >= 0.f,
+            "hier.hp_spectral_eff", h.hp_spectral_eff);
+        chk(std::isfinite(h.lp_spectral_eff) && h.lp_spectral_eff >= 0.f,
+            "hier.lp_spectral_eff", h.lp_spectral_eff);
+        chk(std::isfinite(h.coverage_gain_db), "hier.coverage_gain_db", h.coverage_gain_db);
+    }
+    std::printf("Swept %ld computeHierThreshold configurations.\n", hier_cases);
+
     std::printf("\n%s (%d failure%s)\n",
                 g_fail == 0 ? "ALL PASS" : "FAILURES",
                 g_fail, g_fail == 1 ? "" : "s");
