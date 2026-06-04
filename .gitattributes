@@ -1,0 +1,20 @@
+# Normalize line endings: store text as LF in the repo, check out native.
+* text=auto
+
+# Keep these as LF everywhere (shell scripts, YAML, CMake).
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+
+# Treat the vendored single-header as-is (avoid noisy renormalization).
+external/miniaudio.h -text
+
+# Binary types (no diff/merge).
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
+*.gz  binary
+*.wav binary

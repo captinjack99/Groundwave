@@ -1,0 +1,77 @@
+name: release
+
+# Push a version tag (e.g. `git tag v2.0.0 && git push origin v2.0.0`) to build,
+# test, package, and publish a GitHub Release with auto-generated notes.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Opus (vcpkg)
+        run: vcpkg install opus:x64-windows
+        shell: pwsh
+
+      - name: Setup Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          host: windows
+          target: desktop
+          arch: win64_msvc2019_64
+
+      - name: Configure
+        run: >
+          cmake -B build -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_GUI=ON -DBUILD_TESTS=ON -DBUILD_CLI=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        working-directory: build
+        run: ctest -C Release --output-on-failure
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build/Release/dsca_ng.exe,build/Release/dsca_encode.exe,`
+                    build/Release/dsca_decode.exe,build/Release/dsca_modem.exe dist/
+          # Bundle Qt runtime (DLLs + platform plugins) and the MSVC runtime.
+          windeployqt --release --no-translations --compiler-runtime dist/dsca_ng.exe
+          # Bundle the non-Qt runtime DLLs vcpkg placed next to the build output (opus, etc.).
+          Copy-Item build/Release/*.dll dist/ -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist/* -DestinationPath "dsca-ng-${{ github.ref_name }}-windows-x64.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dsca-ng-*-windows-x64.zip
+
+  release:
+    needs: [build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: artifacts/**/*.zip

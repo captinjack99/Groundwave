@@ -1,0 +1,40 @@
+Copyright (c) 2026 The DSCA-NG Authors. All rights reserved.
+
+This software and its source code are made available for reference and
+evaluation only. No license, express or implied, is granted to use, copy,
+modify, merge, publish, distribute, sublicense, or sell copies of this
+software, in whole or in part, without the prior written permission of the
+copyright holder.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---------------------------------------------------------------------------
+NOTE TO THE MAINTAINER
+
+This is a deliberately restrictive default that reserves all rights (the
+GitHub default when no license is present). If you intend this project to be
+open source, replace the text above with the full text of your chosen license
+(for example MIT, Apache-2.0, BSD-3-Clause, or GPL-3.0) before encouraging
+external use or contributions.
+
+---------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS
+
+This project builds against and/or vendors third-party components that are
+distributed under their own licenses, which continue to apply:
+
+  - Qt 6 ............... LGPLv3 / GPL / commercial (The Qt Company).
+                        Dynamic linking is used; LGPLv3 relinking terms apply.
+  - libopus ........... BSD-3-Clause (Xiph.Org Foundation).
+  - miniaudio ......... public domain (Unlicense) or MIT-0, at your option
+                        (David Reid); vendored at external/miniaudio.h.
+  - Any FFT/codec or other third-party sources included under their
+    respective upstream licenses.
+
+Retain the upstream copyright and license notices for these components.

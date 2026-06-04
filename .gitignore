@@ -1,0 +1,48 @@
+# ---- Build output ----
+build/
+out/
+cmake-build-*/
+/CMakeCache.txt
+/CMakeFiles/
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+
+# ---- Package staging / release artifacts ----
+dist/
+*.zip
+*.tar.gz
+
+# ---- vcpkg ----
+vcpkg_installed/
+.vcpkg-root
+
+# ---- Qt generated ----
+*.qmlc
+*.jsc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+
+# ---- IDE / editor ----
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+CMakeSettings.json
+
+# ---- OS / cloud-sync cruft ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+
+# ---- Logs / scratch ----
+*.log
+*.tmp
