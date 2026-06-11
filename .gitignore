@@ -46,3 +46,7 @@ desktop.ini
 # ---- Logs / scratch ----
 *.log
 *.tmp
+
+# Academic manuscripts live OUTSIDE the repo (../thesis). Tripwire so
+# they can never be committed again.
+docs/thesis/

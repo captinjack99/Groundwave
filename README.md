@@ -14,8 +14,7 @@ plus a set of command-line tools. It runs entirely in software loopback
 
 > Formerly published as DSCA-NG.
 
-<!-- Replace OWNER/REPO after the first push to enable the badge. -->
-![build](https://github.com/OWNER/REPO/actions/workflows/build.yml/badge.svg)
+![build](https://github.com/captinjack99/Groundwave/actions/workflows/build.yml/badge.svg)
 
 ## Highlights
 
