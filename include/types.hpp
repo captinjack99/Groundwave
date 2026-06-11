@@ -192,7 +192,7 @@ struct OFDMParams {
     // over the FIRST W samples of each symbol's CP and a complementary
     // fall window over the LAST W samples of the symbol body, where
     // W = round(cp * pct / 100). Smooths the time-domain transitions
-    // at symbol boundaries, knocking ~3–6 dB off the OFDM spectral
+    // at symbol boundaries, knocking ~2.5–5 dB off the OFDM band-edge
     // side-lobes at modest tapers (12 %) and more at higher tapers —
     // helpful for FCC §73.319 spectral-mask compliance.
     //
@@ -207,6 +207,14 @@ struct OFDMParams {
     // compliance matters more than the marginal SNR on the highest
     // modcods. Range: 0 to 25.
     float    cp_window_taper_pct = 0.f;
+
+    // PAPR tone-reservation: fraction of active subcarriers carved OUT of the
+    // data allocation as dedicated peak-reduction tones (which carry no data).
+    // 0 = off (no carve, zero cost, byte-identical allocation). The engine sets
+    // this from PAPRConfig.reserve_fraction when PAPR-TR is enabled, so TX and
+    // RX compute the SAME data/reserved split -- without it the PAPR reducer
+    // overwrites live data carriers and the RX demaps garbage there.
+    float    papr_reserve_fraction = 0.f;
 
     // Derived helpers
     size_t cpLength() const {
@@ -253,14 +261,37 @@ struct OFDMParams {
             }
         }
         size_t n = (n_target > n_sr) ? n_target : n_sr;
-        // Floor at the SR-relative value and ceiling at fft/4 so a tiny
-        // signal_bw doesn't reduce active to zero.
-        size_t max_guard = fft_size / 4;
+        // Ceiling: keep a minimal usable carrier set rather than the old
+        // fft/4 cap. fft/4 silently overrode the target_bw constraint
+        // whenever honoring it needed more than fft/4 guard bins per side
+        // (e.g. FFT 1024 @ 48 kHz with a 9.6 kHz target needs ~410), so
+        // the occupied band could exceed target_bw by 2x+ and the band
+        // edges landed inside the TX/RX LPF transition bands — clipped
+        // carriers, corrupted channel estimates. A narrow target on a
+        // large FFT is a legitimate config; only refuse to go below
+        // MIN_ACTIVE total carriers.
+        constexpr size_t MIN_ACTIVE = 16;
+        size_t max_guard = (fft_size > MIN_ACTIVE)
+                         ? (fft_size - MIN_ACTIVE) / 2
+                         : 0;
         return (n < max_guard) ? n : max_guard;
     }
     size_t guardRight() const {
         if (guard_right > 0) return guard_right;
         return guardLeft();  // symmetric auto-default
+    }
+    /** Two-sided occupied bandwidth (Hz) of the active subcarriers — the
+     *  band a passband chain must pass: (active bins incl. pilots, excl.
+     *  guards and the DC null) × subcarrier spacing. The allocation centers
+     *  this band on DC (computeAllocation), so a real-IF path needs
+     *  [fc − occ/2, fc + occ/2] inside (0, Nyquist) and LPF cutoffs of at
+     *  least occ/2. */
+    double occupiedBandwidthHz() const {
+        if (fft_size == 0) return 0.0;
+        size_t guards = guardLeft() + guardRight();
+        size_t active = (guards < fft_size) ? fft_size - guards : 0;
+        if (dc_null && active > 0) --active;
+        return static_cast<double>(active) * subcarrierSpacing();
     }
 };
 

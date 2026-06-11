@@ -112,22 +112,17 @@ cd build
 ctest -C Release --output-on-failure
 ```
 
-Expected output:
+Expected output ends with (25 suites as of this writing):
 ```
-1/6 Test #1: loopback_test ....................   Passed
-2/6 Test #2: frame_test .......................   Passed
-3/6 Test #3: fec_test .........................   Passed
-4/6 Test #4: codec_test .......................   Passed
-5/6 Test #5: modem_test .......................   Passed
-6/6 Test #6: gui_test .........................   Passed
+25/25 Test #25: exit_chart_selftest ..............   Passed
 
-100% tests passed, 0 tests failed out of 6
+100% tests passed, 0 tests failed out of 25
 ```
 
-Individual test detail:
+Each suite is a standalone executable that prints per-assertion detail
+when run directly, e.g.:
 ```powershell
 .\Release\gui_test.exe
-# --- Results: 269/269 passed ---
 ```
 
 ### Run the GUI
@@ -151,8 +146,11 @@ C:\Qt\6.7.0\msvc2022_64\bin\windeployqt.exe .\Release\dsca_ng.exe
 | Option | Default | Description |
 |--------|---------|-------------|
 | `BUILD_GUI` | `ON` | Build the Qt6 GUI executable |
+| `BUILD_CLI` | `ON` | Build the command-line tools |
 | `BUILD_TESTS` | `ON` | Build test executables |
-| `DSCA_ENABLE_AUDIO` | `OFF` | Enable real soundcard I/O via miniaudio |
+| `DSCA_ENABLE_AUDIO` | `ON` | Enable real soundcard I/O via miniaudio |
+| `ENABLE_SIMD` | `ON` | Compile with AVX2 (binaries require an AVX2-capable CPU, ~2013+) |
+| `USE_FFTW3` | `OFF` | Use FFTW3 single-precision instead of the built-in FFT |
 
 Example with hardware audio enabled:
 ```powershell

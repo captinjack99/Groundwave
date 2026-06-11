@@ -85,19 +85,20 @@ transmission. The waterfall fills with a colored signal, the
 constellation widget populates, and the InfoPanel shows live bitrate.</p>
 
 <h3 style="color:#0099FF;">2. Picking a Preset</h3>
-<p>The <b>F1</b>–<b>F8</b> keys load the 8 built-in presets. Each preset
-chooses a complete modem configuration (modulation, FEC, FFT, sample
-rate, center frequency):</p>
+<p>The <b>Ctrl+1</b>–<b>Ctrl+8</b> keys load the 8 built-in presets
+(preset slot <i>N</i> = <b>Ctrl+(N+1)</b>). Each preset chooses a
+complete modem configuration (modulation, FEC, FFT, sample rate,
+center frequency):</p>
 <ul>
-  <li><b>F1 — Robust:</b> BPSK / Rate 1/4 — survives noisy channels but
+  <li><b>Ctrl+1 — Robust:</b> BPSK / Rate 1/4 — survives noisy channels but
       carries little audio</li>
-  <li><b>F2 — Standard:</b> QPSK / Rate 1/2 — balanced default</li>
-  <li><b>F3 — HD Audio:</b> 16-QAM / Rate 3/4 — clean stereo at moderate SNR</li>
-  <li><b>F4 — High Capacity:</b> 64-QAM / Rate 4/5 — needs good SNR</li>
-  <li><b>F5 — Ultra HD:</b> 256-QAM / Rate 8/9 — wide channel, premium audio</li>
-  <li><b>F6 — Broadcast Studio:</b> 1024-QAM, 192 kHz SR — top quality, top SNR</li>
-  <li><b>F7 — Emergency:</b> BPSK, 1/4, tiny FFT — last-resort robustness</li>
-  <li><b>F8 — Custom:</b> empty slot, save your own with File → Save Preset</li>
+  <li><b>Ctrl+2 — Standard:</b> QPSK / Rate 1/2 — balanced default</li>
+  <li><b>Ctrl+3 — HD Audio:</b> 16-QAM / Rate 3/4 — clean stereo at moderate SNR</li>
+  <li><b>Ctrl+4 — High Capacity:</b> 64-QAM / Rate 4/5 — needs good SNR</li>
+  <li><b>Ctrl+5 — Ultra HD:</b> 256-QAM / Rate 8/9 — wide channel, premium audio</li>
+  <li><b>Ctrl+6 — Broadcast Studio:</b> 1024-QAM, 192 kHz SR — top quality, top SNR</li>
+  <li><b>Ctrl+7 — Emergency:</b> BPSK, 1/4, tiny FFT — last-resort robustness</li>
+  <li><b>Ctrl+8 — Custom:</b> empty slot, save your own via Presets → Manage Presets…</li>
 </ul>
 
 <h3 style="color:#0099FF;">3. Reading the Status</h3>
@@ -125,7 +126,7 @@ multi-channel virtual cable (VB-CABLE 16ch, VoiceMeeter), you get
 true 1-to-1 routing.</p>
 
 <h3 style="color:#0099FF;">5. Going Live: Hardware Audio</h3>
-<p>Open <b>Settings → Audio Devices…</b>. Pick a Playback device (where
+<p>Open <b>Engine → Audio Devices…</b>. Pick a Playback device (where
 the modulated TX signal goes — typically a virtual audio cable feeding
 your FM exciter) and a Capture device (where the RX signal comes
 back). Tick <b>Enable Hardware Audio</b> and click <b>Apply</b>.</p>
@@ -251,16 +252,17 @@ QString HelpDialog::shortcutsHtml() const {
 <p style="color:#8E8E93;">All single-key and Ctrl-combination shortcuts.</p>
 
 <h3 style="color:#0099FF;">Preset Selection</h3>
+<p style="color:#8E8E93;">Preset slot <i>N</i> = <b>Ctrl+(N+1)</b>.</p>
 <table cellpadding="6">
-<tr><td><code style="color:#0099FF;">F2</code></td><td>Standard (QPSK, 1/2)</td></tr>
-<tr><td><code style="color:#0099FF;">F3</code></td><td>HD Audio (16-QAM, 3/4)</td></tr>
-<tr><td><code style="color:#0099FF;">F4</code></td><td>High Capacity (64-QAM, 4/5)</td></tr>
-<tr><td><code style="color:#0099FF;">F6</code></td><td>Broadcast Studio (1024-QAM, 9/10)</td></tr>
-<tr><td><code style="color:#0099FF;">F7</code></td><td>Emergency (BPSK, 1/4)</td></tr>
-<tr><td><code style="color:#0099FF;">F8</code></td><td>Custom (user-defined; empty by default)</td></tr>
+<tr><td><code style="color:#0099FF;">Ctrl+1</code></td><td>Robust (BPSK, 1/4)</td></tr>
+<tr><td><code style="color:#0099FF;">Ctrl+2</code></td><td>Standard (QPSK, 1/2)</td></tr>
+<tr><td><code style="color:#0099FF;">Ctrl+3</code></td><td>HD Audio (16-QAM, 3/4)</td></tr>
+<tr><td><code style="color:#0099FF;">Ctrl+4</code></td><td>High Capacity (64-QAM, 4/5)</td></tr>
+<tr><td><code style="color:#0099FF;">Ctrl+5</code></td><td>Ultra HD (256-QAM, 8/9)</td></tr>
+<tr><td><code style="color:#0099FF;">Ctrl+6</code></td><td>Broadcast Studio (1024-QAM, 9/10)</td></tr>
+<tr><td><code style="color:#0099FF;">Ctrl+7</code></td><td>Emergency (BPSK, 1/4)</td></tr>
+<tr><td><code style="color:#0099FF;">Ctrl+8</code></td><td>Custom (user-defined; empty by default)</td></tr>
 </table>
-<p style="color:#8E8E93;">The <b>Robust</b> and <b>Ultra HD</b> presets are on the
-<b>Presets</b> menu — F1 (Help) and F5 (TX) reserve those keys.</p>
 
 <h3 style="color:#0099FF;">Transmit / Receive Control</h3>
 <table cellpadding="6">
@@ -285,11 +287,10 @@ QString HelpDialog::shortcutsHtml() const {
 
 <h3 style="color:#0099FF;">Spectrum Widget</h3>
 <table cellpadding="6">
-<tr><td>Mouse drag</td><td>Pan frequency axis (when zoomed)</td></tr>
-<tr><td>Mouse wheel</td><td>Zoom frequency axis</td></tr>
+<tr><td>Mouse wheel</td><td>Zoom the dB (amplitude) range; disables auto-range</td></tr>
 <tr><td>Click</td><td>Place primary cursor (frequency readout)</td></tr>
 <tr><td>Shift + click</td><td>Place delta cursor (Δf readout)</td></tr>
-<tr><td>Right click</td><td>Clear cursors</td></tr>
+<tr><td>View menu</td><td>Clear cursors, toggle FCC mask / waterfall</td></tr>
 </table>
 
 <h3 style="color:#0099FF;">Constellation Widget</h3>
@@ -398,7 +399,7 @@ the GUI and miniaudio + Opus for I/O.</p>
 </ul>
 
 <h3 style="color:#0099FF;">Test infrastructure</h3>
-<p>11 ctest suites covering FEC, OFDM chain, DSP primitives, end-to-end
+<p>The ctest suite covers FEC, OFDM chain, DSP primitives, end-to-end
 integration, LDPC matrix correctness, Reed-Solomon error correction,
 Side reconstructor, configuration persistence, and GUI smoke tests.
 All build at <code>/W4 /WX /permissive-</code>.</p>
@@ -408,7 +409,7 @@ All build at <code>/W4 /WX /permissive-</code>.</p>
 (optional, GPL). Codebase under the project's own license.</p>
 
 <p style="color:#48484E; font-size:10px; margin-top:24px;">
-Built %DATE% · Qt %QTVER% · MSVC %MSVCVER%
+Built )HTML" DSCA_BUILD_DATE R"HTML( UTC · Qt )HTML" QT_VERSION_STR R"HTML(
 </p>
 )HTML";
 }

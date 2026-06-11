@@ -44,6 +44,7 @@ private:
     QTimer* blink_timer_;
     bool blink_state_ = false;
     AlarmStatus last_status_;
+    uint64_t last_log_revision_ = 0;  ///< change detection for refreshLog()
 };
 
 } // namespace dsca

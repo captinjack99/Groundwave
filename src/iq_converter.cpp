@@ -234,57 +234,117 @@ AGC::AGC(uint32_t sample_rate, const AGCConfig& cfg)
     alpha_release_ = 1.f - std::exp(-1.f / (static_cast<float>(fs_) * tau_release));
 }
 
+// BLOCK-BASED gain, not per-sample. A per-sample AGC with a millisecond
+// attack tracks the OFDM signal's own envelope (PAPR ~10 dB swings within
+// every symbol — the attack tau of 5 ms is LESS than one FFT256 symbol at
+// 48 kHz) and acts as a fast compressor: a time-varying gain multiplying
+// the waveform inside the FFT window, i.e. a nonlinearity that smears
+// subcarriers into each other (ICI). Constant-envelope test signals
+// (sines) pass through unchanged, which is why tone-based tests never saw
+// it — but no OFDM codeword survives the real-IF path with the envelope
+// follower engaged. Here the level estimate is updated ONCE per block
+// (attack/release alphas compounded over the block length) and the gain is
+// applied as one LINEAR ramp from the previous block's gain to the new one:
+// click-free, no intra-symbol modulation, and slow gain drift across
+// symbols is absorbed by the pilot/channel tracking like any other slowly
+// time-varying channel.
+namespace {
+inline float compoundAlpha(float per_sample_alpha, size_t n) {
+    // 1 - (1-a)^n without pow() blowups for large n.
+    if (per_sample_alpha >= 1.f) return 1.f;
+    double keep = std::pow(1.0 - static_cast<double>(per_sample_alpha),
+                           static_cast<double>(n));
+    return static_cast<float>(1.0 - keep);
+}
+} // anonymous
+
+namespace {
+// Internal AGC granularity: gain is updated once per sub-block and applied
+// as a linear ramp. ~21 ms at 48 kHz — long against the OFDM envelope
+// (no compressor behavior), short enough to track level steps within a
+// few blocks regardless of how large a buffer the caller hands us.
+constexpr size_t AGC_SUB_BLOCK = 1024;
+} // anonymous
+
 void AGC::process(float* samples, size_t num_samples) {
-    float max_gain_lin = std::pow(10.f, cfg_.max_gain / 20.f);
-    float min_gain_lin = std::pow(10.f, cfg_.min_gain / 20.f);
+    const float max_gain_lin = std::pow(10.f, cfg_.max_gain / 20.f);
+    const float min_gain_lin = std::pow(10.f, cfg_.min_gain / 20.f);
 
-    for (size_t i = 0; i < num_samples; ++i) {
-        // Estimate power (squared magnitude)
-        float power = samples[i] * samples[i];
+    for (size_t off = 0; off < num_samples; off += AGC_SUB_BLOCK) {
+        const size_t n = std::min(AGC_SUB_BLOCK, num_samples - off);
+        float* blk = samples + off;
 
-        // Exponential smoothing with attack/release asymmetry
-        float alpha = (power > est_rms_ * est_rms_) ?
-                      alpha_attack_ : alpha_release_;
+        double acc = 0.0;
+        for (size_t i = 0; i < n; ++i)
+            acc += static_cast<double>(blk[i]) * blk[i];
+        const float block_power =
+            static_cast<float>(acc / static_cast<double>(n));
+
+        // Level smoothing with attack/release asymmetry, compounded over
+        // the sub-block length so behavior is chunking-independent.
+        const float alpha = compoundAlpha(
+            (block_power > est_rms_ * est_rms_) ? alpha_attack_
+                                                : alpha_release_, n);
         float est_power = est_rms_ * est_rms_;
-        est_power = (1.f - alpha) * est_power + alpha * power;
+        est_power = (1.f - alpha) * est_power + alpha * block_power;
         est_rms_ = std::sqrt(std::max(est_power, 1e-20f));
 
-        // Compute desired gain
+        const float g_start = std::clamp(gain_, min_gain_lin, max_gain_lin);
         if (est_rms_ > 1e-10f) {
             float desired = cfg_.target_rms / est_rms_;
-            // Smooth gain changes to avoid clicking
-            float g_alpha = (desired < gain_) ? alpha_attack_ : alpha_release_;
+            float g_alpha = compoundAlpha(
+                (desired < gain_) ? alpha_attack_ : alpha_release_, n);
             gain_ = (1.f - g_alpha) * gain_ + g_alpha * desired;
         }
-
         gain_ = std::clamp(gain_, min_gain_lin, max_gain_lin);
 
-        samples[i] *= gain_;
+        // Linear ramp across the sub-block: continuous at both ends.
+        const float step = (gain_ - g_start) / static_cast<float>(n);
+        float g = g_start;
+        for (size_t i = 0; i < n; ++i) {
+            g += step;
+            blk[i] *= g;
+        }
     }
 }
 
 void AGC::process(ComplexBuf& samples) {
-    float max_gain_lin = std::pow(10.f, cfg_.max_gain / 20.f);
-    float min_gain_lin = std::pow(10.f, cfg_.min_gain / 20.f);
+    const size_t num_samples = samples.size();
+    const float max_gain_lin = std::pow(10.f, cfg_.max_gain / 20.f);
+    const float min_gain_lin = std::pow(10.f, cfg_.min_gain / 20.f);
 
-    for (size_t i = 0; i < samples.size(); ++i) {
-        float power = std::norm(samples[i]); // |z|^2
+    for (size_t off = 0; off < num_samples; off += AGC_SUB_BLOCK) {
+        const size_t n = std::min(AGC_SUB_BLOCK, num_samples - off);
+        ComplexSample* blk = samples.data() + off;
 
-        float alpha = (power > est_rms_ * est_rms_) ?
-                      alpha_attack_ : alpha_release_;
+        double acc = 0.0;
+        for (size_t i = 0; i < n; ++i)
+            acc += static_cast<double>(std::norm(blk[i]));
+        const float block_power =
+            static_cast<float>(acc / static_cast<double>(n));
+
+        const float alpha = compoundAlpha(
+            (block_power > est_rms_ * est_rms_) ? alpha_attack_
+                                                : alpha_release_, n);
         float est_power = est_rms_ * est_rms_;
-        est_power = (1.f - alpha) * est_power + alpha * power;
+        est_power = (1.f - alpha) * est_power + alpha * block_power;
         est_rms_ = std::sqrt(std::max(est_power, 1e-20f));
 
+        const float g_start = std::clamp(gain_, min_gain_lin, max_gain_lin);
         if (est_rms_ > 1e-10f) {
             float desired = cfg_.target_rms / est_rms_;
-            float g_alpha = (desired < gain_) ? alpha_attack_ : alpha_release_;
+            float g_alpha = compoundAlpha(
+                (desired < gain_) ? alpha_attack_ : alpha_release_, n);
             gain_ = (1.f - g_alpha) * gain_ + g_alpha * desired;
         }
-
         gain_ = std::clamp(gain_, min_gain_lin, max_gain_lin);
 
-        samples[i] *= gain_;
+        const float step = (gain_ - g_start) / static_cast<float>(n);
+        float g = g_start;
+        for (size_t i = 0; i < n; ++i) {
+            g += step;
+            blk[i] *= g;
+        }
     }
 }
 

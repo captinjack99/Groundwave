@@ -33,6 +33,7 @@
 
 #include "types.hpp"
 #include "ldpc.hpp"
+#include "soft_decoder.hpp"
 #include <vector>
 #include <memory>
 
@@ -48,7 +49,28 @@ struct ORBGRANDConfig {
     size_t max_lw        = 0;     ///< Max logistic weight (0 = auto from max_queries)
 };
 
-class ORBGRANDDecoder {
+// =========================================================================
+// List-GRAND / SOGRAND output types
+// =========================================================================
+
+/** One codeword candidate found during a List-GRAND search.
+ *  bits = full codeword (n bits) packed MSB-first, ceil(n/8) bytes.
+ *  cost = sum of |LLR| over the flipped (least-reliable) positions — i.e.
+ *  the soft Hamming distance of this candidate from the channel hard
+ *  decision. Lower cost = more likely (closer to ML). */
+struct GRANDCandidate {
+    std::vector<uint8_t> bits;
+    float                cost = 0.f;
+};
+
+/** Result of a List-GRAND decode: the hard-output base result plus a
+ *  cost-ranked list of up to L valid codewords (ascending cost). */
+struct GRANDListResult {
+    LDPCDecodeResult            base;
+    std::vector<GRANDCandidate> list;
+};
+
+class ORBGRANDDecoder : public ISoftDecoder {
 public:
     ORBGRANDDecoder(FECRate rate, LDPCBlockSize blk,
                     const ORBGRANDConfig& cfg = {});
@@ -64,8 +86,26 @@ public:
      *  @param hard_out  Decoded codeword as packed bytes, ceil(n/8) bytes */
     LDPCDecodeResult decodeFull(const float* llr_in, uint8_t* hard_out);
 
-    size_t infoBits()     const { return H_->k; }
-    size_t codewordBits() const { return H_->n; }
+    /** List-GRAND: return up to L valid codewords ranked by ascending cost
+     *  (soft Hamming distance from the channel hard decision). The first
+     *  entry, when present, is the ML codeword and matches decodeFull().
+     *  @param llr_in Input channel LLRs (n values).
+     *  @param L      Maximum list size.
+     *  @return base hard-output result + cost-ranked candidate list. */
+    GRANDListResult decodeList(const float* llr_in, size_t L);
+
+    /** SOGRAND: per-bit max-log a-posteriori LLRs (size n) derived from a
+     *  List-GRAND search. Matches the BP decodePosterior() contract:
+     *  post_out[i] > 0 => bit i more likely 0. Bits on which the whole list
+     *  agrees fall back to the (clamped) channel LLR.
+     *  @param llr_in   Input channel LLRs (n values).
+     *  @param post_out Output posterior LLRs (resized to n).
+     *  @return Decode result; converged = list non-empty. */
+    LDPCDecodeResult decodePosterior(const float* llr_in,
+                                     std::vector<float>& post_out) override;
+
+    size_t infoBits()     const override { return H_->k; }
+    size_t codewordBits() const override { return H_->n; }
     size_t parityChecks() const { return H_->m; }
 
     const LDPCMatrix& matrix() const { return *H_; }
@@ -106,6 +146,39 @@ private:
                     std::vector<uint8_t>& syndrome,
                     size_t& unsatisfied,
                     size_t lw, size_t& queries);
+
+    // -----------------------------------------------------------------
+    // List-GRAND collection (parallel path; preserves flip/unflip
+    // invariant after every recorded candidate so the search continues).
+    // -----------------------------------------------------------------
+    struct ListCollector {
+        size_t cap = 0;                     ///< Max list size (L)
+        size_t n_bytes = 0;                 ///< ceil(n/8) snapshot size
+        std::vector<GRANDCandidate> items;  ///< kept ascending by cost
+
+        /** Insert a candidate (snapshot of `hard`, given cost) keeping the
+         *  list sorted ascending by cost and capped at `cap`. */
+        void offer(const std::vector<uint8_t>& hard, float cost);
+        bool full() const { return items.size() >= cap; }
+    };
+
+    // Returns true to STOP the search (list full or query budget hit).
+    bool collectWeight1(std::vector<uint8_t>& hard,
+                        std::vector<uint8_t>& syndrome,
+                        size_t& unsatisfied,
+                        size_t lw, size_t& queries, ListCollector& col);
+    bool collectWeight2(std::vector<uint8_t>& hard,
+                        std::vector<uint8_t>& syndrome,
+                        size_t& unsatisfied,
+                        size_t lw, size_t& queries, ListCollector& col);
+    bool collectWeight3(std::vector<uint8_t>& hard,
+                        std::vector<uint8_t>& syndrome,
+                        size_t& unsatisfied,
+                        size_t lw, size_t& queries, ListCollector& col);
+    bool collectWeight4(std::vector<uint8_t>& hard,
+                        std::vector<uint8_t>& syndrome,
+                        size_t& unsatisfied,
+                        size_t lw, size_t& queries, ListCollector& col);
 
     std::shared_ptr<LDPCMatrix> H_;
     ORBGRANDConfig cfg_;

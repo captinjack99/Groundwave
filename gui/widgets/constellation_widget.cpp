@@ -7,6 +7,7 @@
 #include "../../include/hierarchical_mod.hpp"  // hierLayerName
 #include <QPainter>
 #include <QPainterPath>
+#include <QMouseEvent>
 #include <cmath>
 #include <algorithm>
 #include <limits>
@@ -60,6 +61,17 @@ void ConstellationWidget::onConstellationReady() {
     // shared AppState.
     snapshotState();
     update();
+}
+
+void ConstellationWidget::mousePressEvent(QMouseEvent* e) {
+    // Left-click toggles EVM-detail mode (Help advertises this). setEvmDetailMode
+    // already calls update(), so no extra repaint needed here.
+    if (e->button() == Qt::LeftButton) {
+        setEvmDetailMode(!evmDetailMode());
+        e->accept();
+        return;
+    }
+    QWidget::mousePressEvent(e);
 }
 
 const SymbolMapper& ConstellationWidget::mapper() {

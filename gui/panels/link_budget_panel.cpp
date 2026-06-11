@@ -6,6 +6,7 @@
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QFrame>
+#include <QSignalBlocker>
 
 namespace dsca {
 
@@ -205,8 +206,27 @@ LinkBudgetPanel::LinkBudgetPanel(AppState& state, QWidget* parent)
 
     root->addStretch();
 
-    // Re-compute on any input change
-    auto trigger = [this]() { recompute(); };
+    // Seed the input widgets from persisted state BEFORE wiring the change
+    // triggers, so seeding doesn't spuriously fire write-back/recompute.
+    seedInputsFromState();
+
+    // Re-compute on any input change. First mirror the current widget values
+    // back into AppState so they persist (Save Config) and survive restart.
+    auto trigger = [this]() {
+        {
+            std::lock_guard<std::mutex> lock(state_.mtx);
+            state_.link_budget.tx_power_w   = static_cast<float>(tx_power_w_->value());
+            state_.link_budget.tx_gain_db   = static_cast<float>(tx_gain_db_->value());
+            state_.link_budget.rx_gain_db   = static_cast<float>(rx_gain_db_->value());
+            state_.link_budget.freq_mhz     = static_cast<float>(freq_mhz_->value());
+            state_.link_budget.tx_height_m  = static_cast<float>(tx_height_m_->value());
+            state_.link_budget.rx_height_m  = static_cast<float>(rx_height_m_->value());
+            state_.link_budget.terrain_idx  = terrain_->currentIndex();
+            state_.link_budget.nf_db        = static_cast<float>(nf_db_->value());
+            state_.link_budget.margin_db    = static_cast<float>(margin_db_->value());
+        }
+        recompute();
+    };
     connect(tx_power_w_,   QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
     connect(tx_gain_db_,   QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
     connect(rx_gain_db_,   QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
@@ -217,6 +237,42 @@ LinkBudgetPanel::LinkBudgetPanel(AppState& state, QWidget* parent)
     connect(nf_db_,        QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
     connect(margin_db_,    QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
 
+    recompute();
+}
+
+void LinkBudgetPanel::seedInputsFromState() {
+    // Snapshot the persisted inputs under the lock, then drive the widgets.
+    LinkBudgetInputs lb;
+    {
+        std::lock_guard<std::mutex> lock(state_.mtx);
+        lb = state_.link_budget;
+    }
+    // Block signals so seeding doesn't fire the change trigger (which would
+    // write the values straight back and recompute mid-construction).
+    const QSignalBlocker b0(tx_power_w_);
+    const QSignalBlocker b1(tx_gain_db_);
+    const QSignalBlocker b2(rx_gain_db_);
+    const QSignalBlocker b3(freq_mhz_);
+    const QSignalBlocker b4(tx_height_m_);
+    const QSignalBlocker b5(rx_height_m_);
+    const QSignalBlocker b6(terrain_);
+    const QSignalBlocker b7(nf_db_);
+    const QSignalBlocker b8(margin_db_);
+    tx_power_w_->setValue(lb.tx_power_w);
+    tx_gain_db_->setValue(lb.tx_gain_db);
+    rx_gain_db_->setValue(lb.rx_gain_db);
+    freq_mhz_->setValue(lb.freq_mhz);
+    tx_height_m_->setValue(lb.tx_height_m);
+    rx_height_m_->setValue(lb.rx_height_m);
+    int ti = (lb.terrain_idx >= 0 && lb.terrain_idx < terrain_->count())
+                 ? lb.terrain_idx : 2;
+    terrain_->setCurrentIndex(ti);
+    nf_db_->setValue(lb.nf_db);
+    margin_db_->setValue(lb.margin_db);
+}
+
+void LinkBudgetPanel::refreshFromState() {
+    seedInputsFromState();
     recompute();
 }
 

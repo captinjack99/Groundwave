@@ -224,6 +224,12 @@ MainWindow::MainWindow(AppState& state, QWidget* parent)
                 pls_widget_->update(static_cast<Modulation>(mod),
                                     static_cast<FECRate>(fec),
                                     slot, total, ok, conf);
+                // Mirror the active (post-AMC/VCM) modcod into the status bar.
+                QString txt = QString("MODCOD %1 / %2")
+                    .arg(QString::fromUtf8(modulationName(static_cast<Modulation>(mod))))
+                    .arg(QString::fromUtf8(fecRateName(static_cast<FECRate>(fec))));
+                if (total > 1) txt += QString("  [VCM %1/%2]").arg(slot).arg(total);
+                status_modcod_->setText(txt);
             });
 
     // ---- Tuning panel ----
@@ -448,52 +454,8 @@ void MainWindow::buildMenuBar() {
         engine_.onConfigChanged();
     });
     file_menu->addSeparator();
-    file_menu->addAction("Save Config…", [this]() {
-        QString path = QFileDialog::getSaveFileName(
-            this, "Save Configuration", "dsca_config.json",
-            "JSON Files (*.json)");
-        if (path.isEmpty()) return;
-        bool ok;
-        {
-            // Serialize under the lock — the engine thread writes stats /
-            // spectrum / stream_rms_db into AppState every tick, so an
-            // unsynchronized read can serialize torn values (UB).
-            std::lock_guard<std::mutex> lock(state_.mtx);
-            ok = dsca::saveConfigToFile(state_, path.toStdString());
-        }
-        statusBar()->showMessage(ok ? "Config saved: " + path : "Save failed!", 3000);
-    });
-    file_menu->addAction("Load Config…", [this]() {
-        QString path = QFileDialog::getOpenFileName(
-            this, "Load Configuration", "",
-            "JSON Files (*.json)");
-        if (path.isEmpty()) return;
-        bool ok;
-        {
-            // Mutate AppState under the lock; the engine thread reads
-            // ofdm/frame/modem every tick. deserializeConfig does NOT
-            // re-lock, so holding state_.mtx here is safe (no recursion),
-            // and the values are range-validated inside the deserializer.
-            std::lock_guard<std::mutex> lock(state_.mtx);
-            ok = dsca::loadConfigFromFile(path.toStdString(), state_);
-            if (ok) {
-                // Clear stale live visualization/measurements so the display
-                // doesn't show the previous config's constellation/levels/sync
-                // until new frames flow under the loaded config.
-                state_.constellation.clear();
-                state_.stats = ModemStats{};
-            }
-        }
-        // Refresh panels OUTSIDE the lock (they re-lock state_.mtx).
-        if (ok) {
-            tx_panel_->refreshFromState();
-            info_panel_->refresh();
-            engine_.onConfigChanged();
-            statusBar()->showMessage("Config loaded: " + path, 3000);
-        } else {
-            statusBar()->showMessage("Load failed!", 3000);
-        }
-    });
+    file_menu->addAction("Save Config…", [this]() { saveConfigInteractive(); });
+    file_menu->addAction("Load Config…", [this]() { loadConfigInteractive(); });
     file_menu->addSeparator();
     auto* iq_rec_action = file_menu->addAction("Start IQ recording…");
     auto* iq_stop_action = file_menu->addAction("Stop IQ recording");
@@ -858,6 +820,19 @@ void MainWindow::buildStatusBar() {
     status_snr_->setToolTip("Post-equalization signal-to-noise ratio "
                              "estimate from pilot residuals.");
 
+    // Live modcod as signaled in the PLS header — i.e. the modulation/FEC the
+    // transmitter actually selected after AMC/VCM, which may differ from the
+    // configured TX modcod. Updated from DataBridge::plsUpdated.
+    status_modcod_ = new QLabel("MODCOD —");
+    status_modcod_->setStyleSheet("color:#8E8E93;font-size:11px;"
+                                  "font-family:'SF Mono',Menlo,'DejaVu Sans Mono',monospace;");
+    status_modcod_->setMinimumWidth(150);
+    status_modcod_->setToolTip(
+        "Live PLS-signaled modcod — the modulation and FEC rate actually "
+        "carried in the received signaling header (post-AMC / VCM), which "
+        "may differ from the configured TX modcod. Shows the VCM slot index "
+        "when a VCM schedule is active.");
+
     // Engine state — TX/RX frame counters so the user can SEE the engine
     // working. "TX 0  RX 0" while nothing's transmitting; counters tick
     // up at ~30 fps once TX is enabled. Green when frames are flowing,
@@ -878,7 +853,7 @@ void MainWindow::buildStatusBar() {
     status_audio_->setToolTip(
         "Always-on audio monitor status. Green = playing decoded audio "
         "to the default device. Red = audio_monitor failed to start "
-        "(check Settings → Audio Devices).");
+        "(check Engine → Audio Devices…).");
 
     status_preset_ = new QLabel(
         state_.active_preset_slot >= 0
@@ -896,6 +871,8 @@ void MainWindow::buildStatusBar() {
     statusBar()->addWidget(status_sync_);
     statusBar()->addWidget(new QLabel("  "));
     statusBar()->addWidget(status_snr_);
+    statusBar()->addWidget(new QLabel("  "));
+    statusBar()->addWidget(status_modcod_);
     statusBar()->addWidget(new QLabel("  "));
     statusBar()->addWidget(status_engine_);
     statusBar()->addPermanentWidget(status_audio_);
@@ -937,16 +914,16 @@ void MainWindow::buildKeyboardShortcuts() {
         statusBar()->showMessage(now ? "TX ON" : "TX OFF", 2000);
     });
 
-    // F1..F8 — Preset recall. Preset apply mutates ofdm/frame/modem under
-    // the state mutex, then the GUI thread refreshes panels OUTSIDE the lock
-    // (info panel takes the lock itself, so we must not hold it during refresh).
+    // Ctrl+1..Ctrl+8 — Preset recall. Slot N maps to Ctrl+(N+1) so all 8
+    // presets are reachable AND the toast label matches the key (previously
+    // the F1+i scheme collided with F1=Help / F5=TX, leaving presets 0 and 4
+    // unreachable, and the label index didn't match the key). Ctrl+1..8 don't
+    // collide with Help/TX/engine (F-keys) or save/load (Ctrl+S/O). Preset
+    // apply mutates ofdm/frame/modem under the state mutex, then the GUI
+    // thread refreshes panels OUTSIDE the lock (info panel takes the lock
+    // itself, so we must not hold it during refresh).
     for (int i = 0; i < static_cast<int>(NUM_PRESETS); ++i) {
-        // Skip F1 (bound to Help) and F5 (bound to TX-toggle) — binding a
-        // preset to the same key produced an ambiguous QShortcut activation
-        // (Qt fires activatedAmbiguously and neither action runs reliably).
-        // Presets 0 and 4 remain reachable via the Presets menu. (#58)
-        if (i == 0 || i == 4) continue;
-        auto* sc = new QShortcut(QKeySequence(Qt::Key_F1 + i), this);
+        auto* sc = new QShortcut(QKeySequence(QString("Ctrl+%1").arg(i + 1)), this);
         connect(sc, &QShortcut::activated, [this, i]() {
             QString preset_name;
             int active_slot = -1;
@@ -982,37 +959,72 @@ void MainWindow::buildKeyboardShortcuts() {
         statusBar()->showMessage("Engine stopped", 2000);
     });
 
-    // Ctrl+S — Save config
+    // Ctrl+S / Ctrl+O — same code paths as the File menu (locked + full
+    // panel refresh); the previous shortcut copies bypassed the state lock
+    // (a data race against the engine tick) and skipped the post-load
+    // cleanup + refreshes.
     auto* save_sc = new QShortcut(QKeySequence("Ctrl+S"), this);
-    connect(save_sc, &QShortcut::activated, [this]() {
-        QString path = QFileDialog::getSaveFileName(
-            this, "Save Configuration", "dsca_config.json",
-            "JSON Files (*.json)");
-        if (!path.isEmpty()) {
-            if (dsca::saveConfigToFile(state_, path.toStdString()))
-                statusBar()->showMessage("Config saved: " + path, 3000);
-            else
-                statusBar()->showMessage("Save failed!", 3000);
-        }
-    });
-
-    // Ctrl+O — Load config
+    connect(save_sc, &QShortcut::activated, [this]() { saveConfigInteractive(); });
     auto* load_sc = new QShortcut(QKeySequence("Ctrl+O"), this);
-    connect(load_sc, &QShortcut::activated, [this]() {
-        QString path = QFileDialog::getOpenFileName(
-            this, "Load Configuration", "",
-            "JSON Files (*.json)");
-        if (!path.isEmpty()) {
-            if (dsca::loadConfigFromFile(path.toStdString(), state_)) {
-                tx_panel_->refreshFromState();
-                info_panel_->refresh();
-                engine_.onConfigChanged();
-                statusBar()->showMessage("Config loaded: " + path, 3000);
-            } else {
-                statusBar()->showMessage("Load failed!", 3000);
-            }
+    connect(load_sc, &QShortcut::activated, [this]() { loadConfigInteractive(); });
+}
+
+// =========================================================================
+// Config save/load (File menu + Ctrl+S/Ctrl+O)
+// =========================================================================
+
+void MainWindow::saveConfigInteractive() {
+    QString path = QFileDialog::getSaveFileName(
+        this, "Save Configuration", "dsca_config.json",
+        "JSON Files (*.json)");
+    if (path.isEmpty()) return;
+    bool ok;
+    {
+        // Serialize under the lock — the engine thread writes stats /
+        // spectrum into AppState every tick, so an unsynchronized read can
+        // serialize torn values (UB).
+        std::lock_guard<std::mutex> lock(state_.mtx);
+        ok = dsca::saveConfigToFile(state_, path.toStdString());
+    }
+    statusBar()->showMessage(ok ? "Config saved: " + path : "Save failed!", 3000);
+}
+
+void MainWindow::loadConfigInteractive() {
+    QString path = QFileDialog::getOpenFileName(
+        this, "Load Configuration", "",
+        "JSON Files (*.json)");
+    if (path.isEmpty()) return;
+    bool ok;
+    {
+        // Mutate AppState under the lock; the engine thread reads
+        // ofdm/frame/modem every tick. deserializeConfig does NOT
+        // re-lock, so holding state_.mtx here is safe (no recursion),
+        // and the values are range-validated inside the deserializer.
+        std::lock_guard<std::mutex> lock(state_.mtx);
+        ok = dsca::loadConfigFromFile(path.toStdString(), state_);
+        if (ok) {
+            // Clear stale live visualization/measurements so the display
+            // doesn't show the previous config's constellation/levels/sync
+            // until new frames flow under the loaded config.
+            state_.constellation.clear();
+            state_.stats = ModemStats{};
         }
-    });
+    }
+    // Refresh panels OUTSIDE the lock (they re-lock state_.mtx). ALL
+    // panels that mirror AppState must refresh — the tuning and stream
+    // panels were missed before, so their next user touch wrote stale
+    // widget values back over the just-loaded config.
+    if (ok) {
+        tx_panel_->refreshFromState();
+        link_budget_panel_->refreshFromState();
+        tuning_panel_->refreshFromState();
+        stream_panel_->refreshFromState();
+        info_panel_->refresh();
+        engine_.onConfigChanged();
+        statusBar()->showMessage("Config loaded: " + path, 3000);
+    } else {
+        statusBar()->showMessage("Load failed!", 3000);
+    }
 }
 
 // =========================================================================
@@ -1105,8 +1117,7 @@ void MainWindow::showAboutDialog() {
     // Build info
     auto* info = new QLabel(QString(
         "Build:  %1\n"
-        "Framework:  Qt %2 · C++17\n"
-        "Tests:  269/269 passing (6 suites)\n\n"
+        "Framework:  Qt %2 · C++17\n\n"
         "Features:\n"
         "  BPSK → 4096-QAM  ·  LDPC FEC 1/4 → 9/10\n"
         "  ORBGRAND near-ML  ·  MMSE + Wiener\n"
@@ -1126,7 +1137,7 @@ void MainWindow::showAboutDialog() {
 
     // Shortcuts reference
     auto* shortcuts = new QLabel(
-        "Shortcuts:  F1-F8 Presets · F5 TX · F9/F10 Engine · Ctrl+S/O Config · Ctrl+E Export");
+        "Shortcuts:  Ctrl+1-8 Presets · F5 TX · F9/F10 Engine · Ctrl+S/O Config · Ctrl+E Export");
     shortcuts->setStyleSheet("color: #48484E; font-size: 10px;");
     shortcuts->setWordWrap(true);
     l->addWidget(shortcuts);

@@ -184,14 +184,23 @@ TuningPanel::TuningPanel(AppState& state, QWidget* parent)
         state_.modem.squelch.close_threshold_db = static_cast<float>(squelch_close_->value());
         state_.modem.rx_gain_db        = static_cast<float>(rx_gain_slider_->value()) * 0.1f;
     };
-    connect(afc_enable_,     &QCheckBox::toggled, this, [this, trigger](bool){ trigger(); emit configChanged(); });
-    connect(squelch_enable_, &QCheckBox::toggled, this, [this, trigger](bool){ trigger(); emit configChanged(); });
-    connect(agc_target_rms_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, trigger](double){ trigger(); emit configChanged(); });
-    connect(agc_attack_ms_,  QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, trigger](double){ trigger(); emit configChanged(); });
-    connect(agc_release_ms_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, trigger](double){ trigger(); emit configChanged(); });
-    connect(agc_max_gain_db_,QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, trigger](double){ trigger(); emit configChanged(); });
-    connect(squelch_open_,   QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, trigger](double){ trigger(); emit configChanged(); });
-    connect(squelch_close_,  QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, trigger](double){ trigger(); emit configChanged(); });
+    // The updating_ guard must cover the EMIT too, not just the state
+    // write: refreshFromState() drives every widget setter, and each
+    // previously fired configChanged() (a full engine DSP rebuild) eight
+    // times per refresh — while holding state_.mtx.
+    auto changed = [this, trigger]() {
+        if (updating_) return;
+        trigger();
+        emit configChanged();
+    };
+    connect(afc_enable_,     &QCheckBox::toggled, this, [changed](bool){ changed(); });
+    connect(squelch_enable_, &QCheckBox::toggled, this, [changed](bool){ changed(); });
+    connect(agc_target_rms_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [changed](double){ changed(); });
+    connect(agc_attack_ms_,  QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [changed](double){ changed(); });
+    connect(agc_release_ms_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [changed](double){ changed(); });
+    connect(agc_max_gain_db_,QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [changed](double){ changed(); });
+    connect(squelch_open_,   QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [changed](double){ changed(); });
+    connect(squelch_close_,  QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [changed](double){ changed(); });
     // RX gain is a pure scalar the modem applies inline; the engine re-reads
     // state_.modem.rx_gain_db every tick (AudioEngine::processTick →
     // modem_->setRxGainDb), so update AppState but do NOT emit configChanged —

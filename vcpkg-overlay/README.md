@@ -17,9 +17,10 @@ This overlay differs from the upstream `opus` port in two ways:
 ## Rebuild Opus with DRED (classic-mode vcpkg)
 
 ```powershell
+# Run from the repository root.
 & C:\vcpkg\vcpkg.exe remove opus:x64-windows
 & C:\vcpkg\vcpkg.exe install "opus[core,dred]:x64-windows" `
-    --overlay-ports="C:\Users\Jack\My Drive\DSCA-NG\DSCA-NG-v2\vcpkg-overlay"
+    --overlay-ports=".\vcpkg-overlay"
 ```
 
 Requires internet access during the build (for the model download). The new

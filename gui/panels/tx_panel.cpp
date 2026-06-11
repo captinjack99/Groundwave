@@ -65,9 +65,9 @@ void TxPanel::buildUi() {
     tx_btn_->setMinimumHeight(36);
     tx_btn_->setFont([]{ QFont f; f.setPixelSize(12); f.setLetterSpacing(QFont::AbsoluteSpacing, 1.0); return f; }());
     tx_btn_->setToolTip(
-        "Master transmit enable. When OFF the engine still encodes frames "
-        "internally (so loopback decoding still runs) but the HW radio path "
-        "is muted. Use F1–F8 to load presets.");
+        "Master transmit enable (F5). When OFF, no frames are generated — "
+        "in loopback mode the receiver idles until TX is keyed again. "
+        "Use Ctrl+1…Ctrl+8 to load presets.");
     root->addWidget(tx_btn_);
     connect(tx_btn_, &QPushButton::clicked, this, &TxPanel::onTxToggle);
 

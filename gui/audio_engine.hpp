@@ -76,6 +76,15 @@ struct AudioEngineConfig {
     bool   use_bicm_id    = false;   ///< Iterative BICM (demap ↔ decode w/ extrinsic LLR
                                      ///< feedback). Trades CPU for 1–2 dB at marginal SNR.
     size_t bicm_outer_iter = 3;      ///< Outer iterations for BICM-ID (1 = standard BICM)
+    bool   bicm_inner_sogrand = false; ///< Inner soft-output decoder for BICM-ID:
+                                     ///< false = BP (LDPCDecoder), true = SOGRAND
+                                     ///< (ORBGRANDDecoder). Default OFF (BP): measured
+                                     ///< BP-inner strictly beats SOGRAND-inner at every
+                                     ///< tested modcod/SNR — List-GRAND's posterior is
+                                     ///< over only L=8 candidates, so at these short
+                                     ///< low/medium-rate blocks the true codeword is
+                                     ///< usually outside the list near the cliff, whereas
+                                     ///< BP carries full-graph marginals. Opt-in only.
     bool   use_hw_audio   = false;   ///< Use hardware audio (vs loopback)
     float  loopback_snr   = -1.f;    ///< <0 = perfect loopback, >=0 = add AWGN
     bool   generate_tone  = true;    ///< Generate test tone for TX (vs silence)
@@ -214,6 +223,15 @@ private:
     QThread     thread_;
     QTimer*     timer_ = nullptr;
     std::atomic<bool> running_{false};
+    /// Set by shutdown(); the QThread::started lambda checks it so a stop
+    /// issued during the startup window skips bring-up instead of racing
+    /// the pending quit() (which wedged the engine for the session).
+    std::atomic<bool> shutdown_requested_{false};
+    /// Rebuild-coalescing generation: onConfigChanged() queues one DSP
+    /// rebuild per call, but only the newest needs to run — stale queued
+    /// rebuilds check this and skip (a burst of config clicks otherwise
+    /// serializes seconds of teardown/init ahead of everything else).
+    std::atomic<uint64_t> config_gen_{0};
 
     // ---- Engine config ----
     AudioEngineConfig ecfg_;
@@ -388,7 +406,20 @@ private:
     // periodic preamble is skipped at the right cadence. Reset to 0 whenever a
     // preamble is (re)acquired.
     size_t     rx_frame_count_ = 0;
-    size_t     pls_samples_needed_ = 0; ///< Samples for one PLS OFDM symbol
+    size_t     pls_samples_needed_ = 0; ///< Samples for the PLS block (>=1 OFDM symbol)
+    /// This frame's preamble+PLS were consumed but its codeword (possibly
+    /// re-sized by a PLS-driven FEC rebuild) wasn't buffered yet — resume at
+    /// the codeword slice next tick instead of re-stripping preamble/PLS.
+    bool       rx_pls_pending_ = false;
+
+    // ---- Symbol-timing tracking (CP early/late gate, OFDMSynchronizer) ----
+    // Once per codeword the demod runs trackTiming() on the next symbol and
+    // applies its -1/0/+1 nudge to the FFT-window position, holding alignment
+    // against soundcard sample-clock drift over a long burst. DEFAULT ON: the
+    // loop is a ±1-sample, slow-accumulator gate (gain 0.05) so on a drift-free
+    // stream it returns 0 and is a no-op; the integration suite confirms no
+    // regression. Disable-able for diagnostics / A-B.
+    bool       timing_track_enabled_ = true;
 
     // ---- Sync FSM (Searching → Acquiring → Locked → Tracking → Lost) ----
     SyncFSM    sync_fsm_;

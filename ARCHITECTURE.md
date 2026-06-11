@@ -119,7 +119,7 @@ Payload packets:
 - AGC
 
 ### Phase 4: GUI
-- ImGui application (single implementation)
+- Qt6 Widgets application (single implementation)
 - Spectrum/constellation display
 - Preset system
 

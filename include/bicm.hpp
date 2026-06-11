@@ -51,7 +51,7 @@ class BICMDecoder {
 public:
     BICMDecoder(SymbolMapper*   mapper,
                 BitInterleaver* interleaver,
-                LDPCDecoder*    decoder,
+                ISoftDecoder*   decoder,
                 const BICMConfig& cfg = BICMConfig())
         : mapper_(mapper)
         , interleaver_(interleaver)
@@ -169,11 +169,18 @@ private:
             mapper_->demapSoftPWL(syms, noise_var, out);
             return;
         }
-        const float inv2s2 = 1.0f / (2.0f * std::max(noise_var, 1e-6f));
+        // 1/σ², NOT 1/(2σ²): noise_var is the TOTAL complex noise power
+        // E|n|² (σ²/2 per component), so the max-log channel metric is
+        // −|y−x|²/σ² — exactly the scaling demapSoft/demapSoftPWL use for
+        // the iteration-1 LLRs. The old 1/(2σ²) halved the channel
+        // evidence relative to the LDPC-posterior priors from iteration 2
+        // on, biasing the loop toward the prior and shrinking the
+        // measured BICM-ID gain.
+        const float inv2s2 = 1.0f / std::max(noise_var, 1e-6f);
         base_.resize(M);
         for (size_t s = 0; s < syms.size(); ++s) {
             const ComplexSample y = syms[s];
-            // base[idx] = -|y-x|²/2σ² + Σ_j prior_j contribution.
+            // base[idx] = -|y-x|²/σ² + Σ_j prior_j contribution.
             // A-priori contribution to log P(symbol) for bit j:
             //   bit 0 → +L_j/2,  bit 1 → −L_j/2  (common term cancels in LLR).
             for (size_t idx = 0; idx < M; ++idx) {
@@ -205,7 +212,7 @@ private:
 
     SymbolMapper*   mapper_;
     BitInterleaver* interleaver_;
-    LDPCDecoder*    decoder_;
+    ISoftDecoder*   decoder_;
     BICMConfig      cfg_;
 
     std::vector<float>   ch_llr_;

@@ -9,6 +9,7 @@
 #pragma once
 
 #include "app_state.hpp"
+#include <algorithm>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -136,13 +137,20 @@ private:
         next(); // '{'
         if (peek() == '}') { next(); return v; }
         while (true) {
+            // Truncated input: once we run out of bytes, every helper returns
+            // '\0'/empty WITHOUT advancing pos_, so the original `while(true)`
+            // spun forever appending empty entries (a malformed-input hang /
+            // OOM DoS — surfaced by the #25 fuzz suite). Bail on EOF.
+            if (pos_ >= src_.size()) break;
             auto key = parseString();
             next(); // ':'
             auto val = parseValue();
             v.obj.push_back({key.s, std::move(val)});
             if (peek() == '}') { next(); return v; }
+            if (pos_ >= src_.size()) break;   // no closing '}' before EOF
             next(); // ','
         }
+        return v;
     }
 
     JsonValue parseArray() {
@@ -150,10 +158,13 @@ private:
         next(); // '['
         if (peek() == ']') { next(); return v; }
         while (true) {
+            if (pos_ >= src_.size()) break;   // truncated input: stop at EOF
             v.arr.push_back(parseValue());
             if (peek() == ']') { next(); return v; }
+            if (pos_ >= src_.size()) break;   // no closing ']' before EOF
             next(); // ','
         }
+        return v;
     }
 
     JsonValue parseString() {
@@ -356,6 +367,14 @@ inline std::string serializeConfig(const AppState& state) {
     w.key("enable_rx_squelch"); w.valueBool(state.modem.enable_rx_squelch);
     w.key("enable_dc_blocker"); w.valueBool(state.modem.enable_dc_blocker);
     w.key("rx_gain_db");        w.valueFloat(state.modem.rx_gain_db);
+    // AGC + squelch numerics — all Tuning-panel-editable; without these a
+    // Save→Load round-trip silently reverted the panel's work.
+    w.key("agc_target_rms");    w.valueFloat(state.modem.agc.target_rms);
+    w.key("agc_attack_ms");     w.valueFloat(state.modem.agc.attack_ms);
+    w.key("agc_release_ms");    w.valueFloat(state.modem.agc.release_ms);
+    w.key("agc_max_gain");      w.valueFloat(state.modem.agc.max_gain);
+    w.key("squelch_open_db");   w.valueFloat(state.modem.squelch.open_threshold_db);
+    w.key("squelch_close_db");  w.valueFloat(state.modem.squelch.close_threshold_db);
     w.endObject();
 
     // ---- Hierarchical modulation config ----
@@ -365,6 +384,19 @@ inline std::string serializeConfig(const AppState& state) {
     w.key("alpha");   w.valueFloat(state.hier.alpha);
     w.key("hp_bits"); w.valueInt(state.hier.hp_bits);
     w.key("lp_bits"); w.valueInt(state.hier.lp_bits);
+    w.endObject();
+
+    // ---- Link-budget panel inputs ----
+    w.key("link_budget"); w.beginObject();
+    w.key("tx_power_w");  w.valueFloat(state.link_budget.tx_power_w);
+    w.key("tx_gain_db");  w.valueFloat(state.link_budget.tx_gain_db);
+    w.key("rx_gain_db");  w.valueFloat(state.link_budget.rx_gain_db);
+    w.key("freq_mhz");    w.valueFloat(state.link_budget.freq_mhz);
+    w.key("tx_height_m"); w.valueFloat(state.link_budget.tx_height_m);
+    w.key("rx_height_m"); w.valueFloat(state.link_budget.rx_height_m);
+    w.key("terrain_idx"); w.valueInt(state.link_budget.terrain_idx);
+    w.key("nf_db");       w.valueFloat(state.link_budget.nf_db);
+    w.key("margin_db");   w.valueFloat(state.link_budget.margin_db);
     w.endObject();
 
     // ---- Alarm thresholds ----
@@ -494,6 +526,12 @@ inline bool deserializeConfig(const std::string& json, AppState& state) {
             if (m.has("enable_rx_squelch")) state.modem.enable_rx_squelch = m.at("enable_rx_squelch").asBool();
             if (m.has("enable_dc_blocker")) state.modem.enable_dc_blocker = m.at("enable_dc_blocker").asBool();
             if (m.has("rx_gain_db"))        state.modem.rx_gain_db = m.at("rx_gain_db").asFloat();
+            if (m.has("agc_target_rms"))   state.modem.agc.target_rms = m.at("agc_target_rms").asFloat();
+            if (m.has("agc_attack_ms"))    state.modem.agc.attack_ms  = m.at("agc_attack_ms").asFloat();
+            if (m.has("agc_release_ms"))   state.modem.agc.release_ms = m.at("agc_release_ms").asFloat();
+            if (m.has("agc_max_gain"))     state.modem.agc.max_gain   = m.at("agc_max_gain").asFloat();
+            if (m.has("squelch_open_db"))  state.modem.squelch.open_threshold_db  = m.at("squelch_open_db").asFloat();
+            if (m.has("squelch_close_db")) state.modem.squelch.close_threshold_db = m.at("squelch_close_db").asFloat();
         }
 
         // Hierarchical modulation config
@@ -504,6 +542,20 @@ inline bool deserializeConfig(const std::string& json, AppState& state) {
             if (h.has("alpha"))   state.hier.alpha   = h.at("alpha").asFloat();
             if (h.has("hp_bits")) state.hier.hp_bits = static_cast<uint8_t>(h.at("hp_bits").asInt());
             if (h.has("lp_bits")) state.hier.lp_bits = static_cast<uint8_t>(h.at("lp_bits").asInt());
+        }
+
+        // Link-budget panel inputs
+        if (root.has("link_budget")) {
+            auto& lb = root.at("link_budget");
+            if (lb.has("tx_power_w"))  state.link_budget.tx_power_w  = lb.at("tx_power_w").asFloat();
+            if (lb.has("tx_gain_db"))  state.link_budget.tx_gain_db  = lb.at("tx_gain_db").asFloat();
+            if (lb.has("rx_gain_db"))  state.link_budget.rx_gain_db  = lb.at("rx_gain_db").asFloat();
+            if (lb.has("freq_mhz"))    state.link_budget.freq_mhz    = lb.at("freq_mhz").asFloat();
+            if (lb.has("tx_height_m")) state.link_budget.tx_height_m = lb.at("tx_height_m").asFloat();
+            if (lb.has("rx_height_m")) state.link_budget.rx_height_m = lb.at("rx_height_m").asFloat();
+            if (lb.has("terrain_idx")) state.link_budget.terrain_idx = lb.at("terrain_idx").asInt();
+            if (lb.has("nf_db"))       state.link_budget.nf_db       = lb.at("nf_db").asFloat();
+            if (lb.has("margin_db"))   state.link_budget.margin_db   = lb.at("margin_db").asFloat();
         }
 
         // Alarm thresholds
@@ -621,6 +673,39 @@ inline bool deserializeConfig(const std::string& json, AppState& state) {
             // threshold math and yields inf/NaN readouts — reset to the default.
             if (!(state.hier.alpha >= 1.0f && state.hier.alpha <= 8.0f))
                 state.hier.alpha = 2.0f;
+            // Link-budget terrain index selects one of 5 combo entries
+            // (FreeSpace..DenseUrban); a stale/corrupt value would crash the
+            // combo setCurrentIndex / mis-map the propagation model.
+            if (state.link_budget.terrain_idx < 0 ||
+                state.link_budget.terrain_idx > 4)
+                state.link_budget.terrain_idx = 2;
+            // Center freq / signal bw must fit the passband or the
+            // SoundcardModem ctor throws when the engine rebuilds — the
+            // engine catches it, but the app then sits in a dead-engine
+            // state from one hand-edited config value. Clamp into range.
+            {
+                float nyq = static_cast<float>(state.modem.sample_rate) / 2.f;
+                float& fc = state.modem.center_freq;
+                if (!(fc > 0.f && fc < nyq)) fc = nyq * 0.5f;
+                float& bw = state.modem.signal_bw;
+                float max_bw = 2.f * std::min(fc, nyq - fc) * 0.98f;
+                if (!(bw >= 0.f)) bw = 0.f;              // NaN/negative → auto
+                if (bw > max_bw) bw = max_bw;
+            }
+            // FIR tap counts: a negative JSON value cast through size_t is
+            // ~1.8e19 and the filter designer would try to allocate it.
+            if (state.modem.lpf_taps    > 1023) state.modem.lpf_taps    = 129;
+            if (state.modem.tx_lpf_taps > 1023) state.modem.tx_lpf_taps = 129;
+            // AGC / squelch numerics within the Tuning panel's ranges.
+            auto clampF = [](float& v, float lo, float hi, float dflt) {
+                if (!(v >= lo && v <= hi)) v = dflt;
+            };
+            clampF(state.modem.agc.target_rms, 0.01f, 1.0f,   0.25f);
+            clampF(state.modem.agc.attack_ms,  0.1f,  500.f,  5.0f);
+            clampF(state.modem.agc.release_ms, 1.f,   5000.f, 50.0f);
+            clampF(state.modem.agc.max_gain,   0.f,   90.f,   60.0f);
+            clampF(state.modem.squelch.open_threshold_db,  -120.f, 0.f, -50.f);
+            clampF(state.modem.squelch.close_threshold_db, -120.f, 0.f, -55.f);
         }
 
         // Reinit spectrum freq bins

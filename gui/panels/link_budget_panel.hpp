@@ -31,11 +31,20 @@ class LinkBudgetPanel : public QWidget {
 public:
     explicit LinkBudgetPanel(AppState& state, QWidget* parent = nullptr);
 
+    /** Re-seed the input widgets from state_.link_budget (e.g. after a
+     *  config load) and recompute. Blocks widget signals during seeding so
+     *  it doesn't spuriously write back / re-fire. */
+    void refreshFromState();
+
 public slots:
     /** Recompute and refresh readouts. Call when ModCod or any input changes. */
     void recompute();
 
 private:
+    /** Seed the 9 input widgets from state_.link_budget. Caller holds no
+     *  lock; this takes state_.mtx internally. Signals are blocked so the
+     *  seeding doesn't trigger the recompute/write-back trigger. */
+    void seedInputsFromState();
     AppState& state_;
 
     // Inputs

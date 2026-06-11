@@ -19,6 +19,7 @@
  *   --headless  : do not print progress
  */
 #include "wav_io.hpp"
+#include <algorithm>
 #include "types.hpp"
 #include "ofdm.hpp"
 #include "frame.hpp"
@@ -133,6 +134,16 @@ int main(int argc, char** argv) {
                      opus_bps);
         return 1;
     }
+    // Center frequency must sit inside (0, Nyquist) — the IQUpconverter
+    // ctor throws otherwise (uncaught → terminate, no message).
+    const float nyquist = static_cast<float>(sample_rate) / 2.f;
+    if (!(center_hz > 0.f && center_hz < nyquist)) {
+        std::fprintf(stderr, "Error: center freq %.0f Hz must be inside "
+                     "(0, %.0f) at this sample rate.\n",
+                     static_cast<double>(center_hz),
+                     static_cast<double>(nyquist));
+        return 1;
+    }
 
     // Read WAV
     std::vector<float> pcm;
@@ -169,11 +180,14 @@ int main(int argc, char** argv) {
     OpusAudioEncoder enc(oc);
     size_t opus_frame_samples = oc.frameSamplesTotal();
 
-    // Set up modem chain
+    // Set up modem chain. target_bw_hz keeps the active subcarriers inside
+    // the passband around center_hz (same derivation as dsca_decode, so the
+    // two tools' allocations agree by default).
     OFDMParams ofdm;
     ofdm.fft_size    = static_cast<uint16_t>(fft_size);
     ofdm.modulation  = mod;
     ofdm.sample_rate = sample_rate;
+    ofdm.target_bw_hz = 2.f * 0.8f * std::min(center_hz, nyquist - center_hz);
     OFDMModulator mod_engine(ofdm);
 
     LDPCEncoder ldpc(fec, LDPCBlockSize::Short);
@@ -196,12 +210,19 @@ int main(int argc, char** argv) {
         }
         pcm_pos += opus_frame_samples;
 
-        // Build frame, encode with LDPC
-        FrameBuilder fb(ldpc.infoBytes());
+        // Build frame, encode with LDPC. The FrameBuilder capacity is the
+        // PAYLOAD size — build() wraps it in FRAME_OVERHEAD (sync + header
+        // + CRC) more bytes. Passing infoBytes() as the capacity made every
+        // built frame 24 bytes LONGER than the LDPC info block, and the
+        // resize below chopped the tail off — including the CRC, so no
+        // frame this tool ever produced could pass the decoder's check.
+        const size_t payload_cap =
+            ldpc.infoBytes() > constants::FRAME_OVERHEAD
+                ? ldpc.infoBytes() - constants::FRAME_OVERHEAD : 0;
+        FrameBuilder fb(payload_cap);
         fb.addPacket(0, opus_packet.data(), opus_packet.size());
         ByteVec raw = fb.build(frame_no++, fec, mod);
-        if (raw.size() > ldpc.infoBytes()) raw.resize(ldpc.infoBytes());
-        else raw.resize(ldpc.infoBytes(), 0);
+        raw.resize(ldpc.infoBytes(), 0);
 
         std::vector<uint8_t> codeword(ldpc.codewordBytes(), 0);
         ldpc.encode(raw.data(), codeword.data());

@@ -394,4 +394,320 @@ LDPCDecodeResult ORBGRANDDecoder::decode(const float* llr_in,
     return result;
 }
 
+// =========================================================================
+// List-GRAND: cost-ranked candidate collection
+//
+// Mirror of the hard-output tryWeightX, but on `unsatisfied == 0` we RECORD
+// a snapshot of `hard` plus the pattern cost (= sum of sorted_absllr_ over
+// the flipped sorted positions, which are exactly the loop variables) and
+// then UNFLIP and KEEP SEARCHING. Each collectWeightX returns true to signal
+// the caller to STOP (list full or query budget exhausted).
+//
+// INVARIANT: after returning, every flip applied inside has been undone, so
+// `hard` / `syndrome` / `unsatisfied` are exactly restored — the outer
+// enumeration over logistic weight can continue correctly.
+// =========================================================================
+
+void ORBGRANDDecoder::ListCollector::offer(const std::vector<uint8_t>& hard,
+                                            float cost) {
+    if (cap == 0) return;
+    // Reject if list is full and this cost is no better than the worst kept.
+    if (items.size() >= cap && cost >= items.back().cost) return;
+
+    GRANDCandidate cand;
+    cand.bits.assign(hard.begin(), hard.begin() +
+                     static_cast<std::ptrdiff_t>(n_bytes));
+    cand.cost = cost;
+
+    // Insert keeping ascending-cost order.
+    auto pos = std::upper_bound(
+        items.begin(), items.end(), cost,
+        [](float c, const GRANDCandidate& g) { return c < g.cost; });
+    items.insert(pos, std::move(cand));
+
+    if (items.size() > cap) items.pop_back();
+}
+
+bool ORBGRANDDecoder::collectWeight1(std::vector<uint8_t>& hard,
+                                      std::vector<uint8_t>& syndrome,
+                                      size_t& unsatisfied,
+                                      size_t lw, size_t& queries,
+                                      ListCollector& col) {
+    const size_t n = H_->n;
+    if (lw >= n) return false;
+    if (queries >= cfg_.max_queries) return true;
+
+    size_t real_idx = sorted_indices_[lw];
+    flipBit(hard, real_idx, syndrome, unsatisfied);
+    ++queries;
+
+    if (unsatisfied == 0) {
+        float cost = sorted_absllr_[real_idx];
+        col.offer(hard, cost);
+    }
+
+    // Always unflip and keep searching.
+    flipBit(hard, real_idx, syndrome, unsatisfied);
+    return col.full();
+}
+
+bool ORBGRANDDecoder::collectWeight2(std::vector<uint8_t>& hard,
+                                      std::vector<uint8_t>& syndrome,
+                                      size_t& unsatisfied,
+                                      size_t lw, size_t& queries,
+                                      ListCollector& col) {
+    const size_t n = H_->n;
+    if (lw < 1) return false;
+
+    size_t a_max = (lw - 1) / 2;
+    for (size_t a = 0; a <= a_max; ++a) {
+        if (queries >= cfg_.max_queries) return true;
+
+        size_t b = lw - a;
+        if (b >= n) continue;
+
+        size_t real_a = sorted_indices_[a];
+        size_t real_b = sorted_indices_[b];
+
+        flipBit(hard, real_a, syndrome, unsatisfied);
+        flipBit(hard, real_b, syndrome, unsatisfied);
+        ++queries;
+
+        if (unsatisfied == 0) {
+            float cost = sorted_absllr_[real_a] + sorted_absllr_[real_b];
+            col.offer(hard, cost);
+        }
+
+        flipBit(hard, real_b, syndrome, unsatisfied);
+        flipBit(hard, real_a, syndrome, unsatisfied);
+
+        if (col.full()) return true;
+    }
+    return false;
+}
+
+bool ORBGRANDDecoder::collectWeight3(std::vector<uint8_t>& hard,
+                                      std::vector<uint8_t>& syndrome,
+                                      size_t& unsatisfied,
+                                      size_t lw, size_t& queries,
+                                      ListCollector& col) {
+    const size_t n = H_->n;
+    if (lw < 3) return false;
+
+    for (size_t a = 0; a * 3 + 3 <= lw; ++a) {
+        size_t rem = lw - a;
+        if (a + 1 > rem / 2) break;
+
+        for (size_t b = a + 1; b * 2 < rem; ++b) {
+            if (queries >= cfg_.max_queries) return true;
+
+            size_t c = rem - b;
+            if (c <= b) break;
+            if (c >= n) continue;
+
+            size_t real_a = sorted_indices_[a];
+            size_t real_b = sorted_indices_[b];
+            size_t real_c = sorted_indices_[c];
+
+            flipBit(hard, real_a, syndrome, unsatisfied);
+            flipBit(hard, real_b, syndrome, unsatisfied);
+            flipBit(hard, real_c, syndrome, unsatisfied);
+            ++queries;
+
+            if (unsatisfied == 0) {
+                float cost = sorted_absllr_[real_a] + sorted_absllr_[real_b]
+                           + sorted_absllr_[real_c];
+                col.offer(hard, cost);
+            }
+
+            flipBit(hard, real_c, syndrome, unsatisfied);
+            flipBit(hard, real_b, syndrome, unsatisfied);
+            flipBit(hard, real_a, syndrome, unsatisfied);
+
+            if (col.full()) return true;
+        }
+    }
+    return false;
+}
+
+bool ORBGRANDDecoder::collectWeight4(std::vector<uint8_t>& hard,
+                                      std::vector<uint8_t>& syndrome,
+                                      size_t& unsatisfied,
+                                      size_t lw, size_t& queries,
+                                      ListCollector& col) {
+    const size_t n = H_->n;
+    if (lw < 6) return false;
+
+    for (size_t a = 0; a * 4 + 6 <= lw; ++a) {
+        size_t rem3 = lw - a;
+
+        for (size_t b = a + 1; b * 3 + 3 <= rem3; ++b) {
+            size_t rem2 = rem3 - b;
+            if (b + 1 > rem2 / 2) break;
+
+            for (size_t c = b + 1; c * 2 < rem2; ++c) {
+                if (queries >= cfg_.max_queries) return true;
+
+                size_t d = rem2 - c;
+                if (d <= c) break;
+                if (d >= n) continue;
+
+                size_t real_a = sorted_indices_[a];
+                size_t real_b = sorted_indices_[b];
+                size_t real_c = sorted_indices_[c];
+                size_t real_d = sorted_indices_[d];
+
+                flipBit(hard, real_a, syndrome, unsatisfied);
+                flipBit(hard, real_b, syndrome, unsatisfied);
+                flipBit(hard, real_c, syndrome, unsatisfied);
+                flipBit(hard, real_d, syndrome, unsatisfied);
+                ++queries;
+
+                if (unsatisfied == 0) {
+                    float cost = sorted_absllr_[real_a] + sorted_absllr_[real_b]
+                               + sorted_absllr_[real_c] + sorted_absllr_[real_d];
+                    col.offer(hard, cost);
+                }
+
+                flipBit(hard, real_d, syndrome, unsatisfied);
+                flipBit(hard, real_c, syndrome, unsatisfied);
+                flipBit(hard, real_b, syndrome, unsatisfied);
+                flipBit(hard, real_a, syndrome, unsatisfied);
+
+                if (col.full()) return true;
+            }
+        }
+    }
+    return false;
+}
+
+GRANDListResult ORBGRANDDecoder::decodeList(const float* llr_in, size_t L) {
+    GRANDListResult out;
+    const size_t n = H_->n;
+    const size_t n_bytes = (n + 7) / 8;
+
+    if (L == 0) {
+        out.base.converged = false;
+        return out;
+    }
+
+    // 1. Hard decision from channel LLRs
+    std::fill(hard_bits_.begin(), hard_bits_.end(), 0);
+    for (size_t i = 0; i < n; ++i) {
+        if (llr_in[i] < 0.f) setBit(hard_bits_.data(), i, true);
+    }
+
+    // 2. Reliability sort (least reliable first)
+    std::iota(sorted_indices_.begin(), sorted_indices_.end(), 0);
+    for (size_t i = 0; i < n; ++i) sorted_absllr_[i] = std::abs(llr_in[i]);
+    std::sort(sorted_indices_.begin(), sorted_indices_.end(),
+              [this](size_t a, size_t b) {
+                  return sorted_absllr_[a] < sorted_absllr_[b];
+              });
+
+    // 3. Syndrome of the hard decision
+    size_t unsatisfied = 0;
+    computeSyndrome(hard_bits_, syndrome_, unsatisfied);
+
+    ListCollector col;
+    col.cap     = L;
+    col.n_bytes = n_bytes;
+
+    // 4. Zero-error candidate (hard decision already a codeword): cost 0.
+    if (unsatisfied == 0) {
+        col.offer(hard_bits_, 0.f);
+    }
+
+    // 5. Enumerate error patterns in logistic-weight order, collecting up
+    //    to L valid codewords ranked by ascending cost.
+    size_t queries = 0;
+    bool stop = col.full();
+    for (size_t lw = 0; !stop && lw <= cfg_.max_lw; ++lw) {
+        if (queries >= cfg_.max_queries) break;
+
+        if (cfg_.max_weight >= 1 &&
+            collectWeight1(hard_bits_, syndrome_, unsatisfied, lw, queries, col))
+            { stop = col.full() || queries >= cfg_.max_queries; }
+        if (!stop && cfg_.max_weight >= 2 &&
+            collectWeight2(hard_bits_, syndrome_, unsatisfied, lw, queries, col))
+            { stop = col.full() || queries >= cfg_.max_queries; }
+        if (!stop && cfg_.max_weight >= 3 &&
+            collectWeight3(hard_bits_, syndrome_, unsatisfied, lw, queries, col))
+            { stop = col.full() || queries >= cfg_.max_queries; }
+        if (!stop && cfg_.max_weight >= 4 &&
+            collectWeight4(hard_bits_, syndrome_, unsatisfied, lw, queries, col))
+            { stop = col.full() || queries >= cfg_.max_queries; }
+
+        if (col.full() || queries >= cfg_.max_queries) stop = true;
+    }
+
+    out.list = std::move(col.items);
+    out.base.converged   = !out.list.empty();
+    out.base.iterations  = queries;
+
+    float sum_mag = 0.f;
+    for (size_t i = 0; i < n; ++i) sum_mag += std::abs(llr_in[i]);
+    out.base.avg_magnitude = sum_mag / static_cast<float>(n);
+
+    return out;
+}
+
+// =========================================================================
+// SOGRAND: per-bit max-log a-posteriori LLRs from a List-GRAND search
+// =========================================================================
+
+LDPCDecodeResult ORBGRANDDecoder::decodePosterior(const float* llr_in,
+                                                   std::vector<float>& post_out) {
+    const size_t n = H_->n;
+    constexpr float kClamp = 20.f;  // matches the demapper LLR clamp
+
+    // Run a List-GRAND search (modest list depth is plenty for SO).
+    GRANDListResult lr = decodeList(llr_in, 8);
+
+    post_out.assign(n, 0.f);
+
+    if (lr.list.empty()) {
+        // No codeword found — fall back to the (clamped) channel LLR.
+        for (size_t i = 0; i < n; ++i) {
+            post_out[i] = std::max(-kClamp, std::min(kClamp, llr_in[i]));
+        }
+        LDPCDecodeResult r = lr.base;
+        r.converged = false;
+        return r;
+    }
+
+    // For each bit i: max-log APP LLR = (min cost over members with bit i=0)
+    //                                 - (min cost over members with bit i=1).
+    // The list is ascending in cost, so the FIRST member with a given bit
+    // value is its minimum-cost representative — track first-seen per side.
+    constexpr float kInf = 1e30f;
+    for (size_t i = 0; i < n; ++i) {
+        float c0 = kInf, c1 = kInf;
+        for (const auto& cand : lr.list) {
+            bool bit = getBit(cand.bits.data(), i);
+            if (bit) { if (cand.cost < c1) c1 = cand.cost; }
+            else     { if (cand.cost < c0) c0 = cand.cost; }
+        }
+
+        if (c0 < kInf && c1 < kInf) {
+            // Both hypotheses represented in the list.
+            float l = c1 - c0;  // post = (cost|bit1) - (cost|bit0); >0 => bit0
+            post_out[i] = std::max(-kClamp, std::min(kClamp, l));
+        } else {
+            // Whole list agrees on this bit (the common case for strong
+            // bits). Fall back to the channel LLR, clamped, but keep the
+            // sign consistent with the agreed value.
+            float ch = std::max(-kClamp, std::min(kClamp, llr_in[i]));
+            bool agreed = (c1 < kInf);  // true => list says bit 1
+            float mag = std::abs(ch);
+            if (mag < 1e-3f) mag = kClamp;  // unreliable channel bit, list decided
+            post_out[i] = agreed ? -mag : mag;  // bit1 => negative LLR
+        }
+    }
+
+    LDPCDecodeResult r = lr.base;
+    r.converged = !lr.list.empty();
+    return r;
+}
+
 } // namespace dsca

@@ -396,7 +396,11 @@ struct ComputedParams {
         size_t psp   = (o.pilot_spacing > 0) ? o.pilot_spacing : 1;
         size_t pilots = 0, data = 0, carrier_count = 0;
         for (size_t i = start; i < end; ++i) {
-            if (o.dc_null && i == 0) continue;              // DC bin
+            // Mirror computeAllocation's logical→physical mapping: logical
+            // index i = fft_size/2 lands on physical bin 0 (DC), which the
+            // dc_null option keeps empty. (The old `i == 0` check could
+            // never fire — start >= 1 — and over-counted by one carrier.)
+            if (o.dc_null && i == o.fft_size / 2) continue; // DC bin
             if (carrier_count % psp == 0) ++pilots; else ++data;
             ++carrier_count;
         }
@@ -447,6 +451,25 @@ struct ComputedParams {
 };
 
 // =========================================================================
+// Link-budget panel inputs
+// =========================================================================
+
+// User-entered link-budget parameters. Owned by AppState so they persist
+// across restarts (serialized to config) rather than living only in the
+// panel's spinboxes. Defaults mirror the panel's initial widget values.
+struct LinkBudgetInputs {
+    float tx_power_w   = 1.0f;
+    float tx_gain_db   = 0.0f;
+    float rx_gain_db   = 0.0f;
+    float freq_mhz     = 98.0f;
+    float tx_height_m  = 30.0f;
+    float rx_height_m  = 2.0f;
+    int   terrain_idx  = 2;
+    float nf_db        = 8.0f;
+    float margin_db    = 3.0f;
+};
+
+// =========================================================================
 // AppState — master application state
 // =========================================================================
 
@@ -465,6 +488,11 @@ struct AppState {
     AlarmThresholds  alarm_thresh;
     AlarmStatus      alarm_status;
     std::vector<AlarmEvent> alarm_log; ///< Circular log
+    /// Monotonic count of events ever appended to alarm_log. The panel's
+    /// change detection compares against this — comparing the list-widget
+    /// count to alarm_log.size() froze the log display permanently once
+    /// the circular buffer filled (size pinned at ALARM_LOG_SIZE).
+    uint64_t alarm_log_revision = 0;
 
     // ---- Live measurements ----
     ModemStats      stats;
@@ -489,6 +517,9 @@ struct AppState {
     // directly without coupling to AudioEngine. MainWindow syncs this
     // with the engine's config on apply.
     HierarchicalConfig hier;
+
+    // ---- Link-budget panel inputs (persisted across restarts) ----
+    LinkBudgetInputs link_budget;
 
     // ---- Thread safety ----
     mutable std::mutex mtx;
@@ -582,6 +613,7 @@ struct AppState {
                     alarm_log.erase(alarm_log.begin());
                 alarm_log.push_back({t, val,
                     AlarmEvent::Clock::now(), cur});
+                ++alarm_log_revision;
             }
         };
         logEvent(alarm_status.snr_low,      prev.snr_low,
@@ -594,6 +626,14 @@ struct AppState {
                  AlarmEvent::Type::SYNC_LOST, 0.f);
         logEvent(alarm_status.audio_clipped,prev.audio_clipped,
                  AlarmEvent::Type::AUDIO_CLIP, rx_meter.rms_db);
+
+        // Auto re-arm: Mute/Acknowledge silences the CURRENT alarm episode;
+        // once every condition has cleared, new alarms must alert again.
+        // (The mute used to be permanent — nothing ever cleared it, so one
+        // Acknowledge disabled critical-alarm blinking for the whole
+        // session, despite the tooltip promising re-arm.)
+        if (alarm_status.muted && !alarm_status.anyActive())
+            alarm_status.muted = false;
     }
 
     void acknowledgeAlarms() {

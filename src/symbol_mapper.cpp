@@ -11,6 +11,7 @@
 #include "simd_helpers.hpp"
 #include <cmath>
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -21,7 +22,97 @@ namespace dsca {
 // Construction
 // =========================================================================
 
-SymbolMapper::SymbolMapper(Modulation mod) : mod_(mod) {
+namespace {
+
+// Population count (Hamming weight) of a small integer.
+inline int popcount_u(size_t v) {
+    int c = 0;
+    while (v) { c += static_cast<int>(v & 1u); v >>= 1; }
+    return c;
+}
+
+// Build a per-dimension ANTI-GRAY label permutation: label2level[g] = level.
+//
+// Goal: assign one bits_dim-bit label to each of the G = 2^bits_dim equispaced
+// levels so that Euclidean-adjacent levels (k, k+1) carry labels of LARGE
+// Hamming distance. This is the per-dimension half of an anti-Gray square-QAM
+// labeling; because square QAM is separable, doing it independently on I and Q
+// yields a 2D map whose nearest neighbors differ in many bits.
+//
+// Construction (deterministic, optimal for the small G used here): exact
+// branch-and-bound that maximizes the total adjacent Hamming distance
+// Sum_{k} popcount(label[k] XOR label[k+1]). For G <= 16 (square QAM up to
+// 256) this is tiny. label[0] is pinned to 0 to break the global-symmetry
+// degeneracy and keep the result reproducible. The optimum places nearest
+// neighbors at Hamming distance ~bits_dim, the hallmark of anti-Gray.
+std::vector<size_t> buildAntiGrayLevels(size_t bits_dim) {
+    const size_t G = static_cast<size_t>(1) << bits_dim;
+
+    // Precompute pairwise Hamming distances between candidate labels.
+    std::vector<std::vector<int>> hd(G, std::vector<int>(G, 0));
+    for (size_t a = 0; a < G; ++a)
+        for (size_t b = 0; b < G; ++b)
+            hd[a][b] = popcount_u(a ^ b);
+
+    std::vector<size_t> label(G);        // label[level]
+    std::vector<char>   used(G, 0);
+    std::vector<size_t> best(G);
+    int best_cost = -1;
+
+    // Upper bound on the extra cost achievable from the remaining levels: each
+    // future adjacency contributes at most bits_dim. Used to prune.
+    std::function<void(size_t, int)> dfs = [&](size_t pos, int cost) {
+        if (pos == G) {
+            if (cost > best_cost) { best_cost = cost; best = label; }
+            return;
+        }
+        int remaining_edges = static_cast<int>(G - pos);   // edges still to add
+        if (cost + remaining_edges * static_cast<int>(bits_dim) <= best_cost)
+            return;                                          // cannot beat best
+        for (size_t g = 0; g < G; ++g) {
+            if (used[g]) continue;
+            int add = (pos == 0) ? 0 : hd[label[pos - 1]][g];
+            used[g] = 1;
+            label[pos] = g;
+            dfs(pos + 1, cost + add);
+            used[g] = 0;
+        }
+    };
+    // Pin label[0] = 0 to remove the trivial relabeling symmetry.
+    used[0] = 1; label[0] = 0;
+    dfs(1, 0);
+
+    return best;   // best[level] = label
+}
+
+} // anonymous namespace
+
+void SymbolMapper::buildDimLabeling(size_t bits_dim) {
+    const size_t G = static_cast<size_t>(1) << bits_dim;
+    label2level_.assign(G, 0);
+    level2label_.assign(G, 0);
+
+    if (labeling_ == Labeling::Gray) {
+        // Standard binary-reflected Gray: level k carries label gray(k).
+        auto natToGray = [](size_t n) -> size_t { return n ^ (n >> 1); };
+        for (size_t k = 0; k < G; ++k) {
+            size_t g = natToGray(k);
+            level2label_[k] = g;
+            label2level_[g] = k;
+        }
+    } else {
+        // AntiGray: level k carries label best[k] from the optimizer above.
+        std::vector<size_t> lvl2lab = buildAntiGrayLevels(bits_dim);
+        for (size_t k = 0; k < G; ++k) {
+            size_t g = lvl2lab[k];
+            level2label_[k] = g;
+            label2level_[g] = k;
+        }
+    }
+}
+
+SymbolMapper::SymbolMapper(Modulation mod, Labeling labeling)
+    : mod_(mod), labeling_(labeling) {
     switch (mod) {
         case Modulation::BPSK:    initBPSK(); break;
         case Modulation::QPSK:    initQPSK(); break;
@@ -89,28 +180,25 @@ void SymbolMapper::initSquareQAM(size_t order) {
     float avg_power = (2.0f / 3.0f) * (m * m - 1.0f);
     norm_ = 1.0f / std::sqrt(avg_power);
 
-    // Gray decoding helper: Gray code → natural binary
-    auto grayDecode = [](size_t g) -> size_t {
-        size_t n = g;
-        while (g >>= 1) n ^= g;
-        return n;
-    };
+    // Build the per-dimension label<->level permutation (Gray or AntiGray).
+    // label2level_[g] = level carried by the bits_dim-bit label g.
+    buildDimLabeling(bits_dim);
 
-    // Build Gray-coded constellation.
+    // Build the constellation.
     // Symbol index bits: [I-bits(high) | Q-bits(low)]
-    // For each dimension: Gray-decoded value gives level index.
+    // For each dimension: the label's level index gives the coordinate.
     // Level 0 = most positive coordinate, matching soft demapper convention
-    // where MSB=0 → positive coordinate → positive LLR.
+    // where (Gray) MSB=0 → positive coordinate → positive LLR.
     //
     // Coordinate = ((grid-1) - 2*level) * norm_
     //   level 0 → +(grid-1), level 1 → +(grid-3), ..., level grid-1 → -(grid-1)
     const_.resize(order);
     for (size_t idx = 0; idx < order; ++idx) {
-        size_t i_gray = idx >> bits_dim;         // high bits → I dimension
-        size_t q_gray = idx & (grid - 1);        // low bits  → Q dimension
+        size_t i_lab = idx >> bits_dim;          // high bits → I dimension label
+        size_t q_lab = idx & (grid - 1);         // low bits  → Q dimension label
 
-        size_t i_level = grayDecode(i_gray);
-        size_t q_level = grayDecode(q_gray);
+        size_t i_level = label2level_[i_lab];
+        size_t q_level = label2level_[q_lab];
 
         float i_coord = (static_cast<float>(grid - 1) - 2.0f * static_cast<float>(i_level));
         float q_coord = (static_cast<float>(grid - 1) - 2.0f * static_cast<float>(q_level));
@@ -166,18 +254,16 @@ uint16_t SymbolMapper::demapHard(ComplexSample sym) const {
         i_level = std::clamp(i_level, 0, static_cast<int>(grid - 1));
         q_level = std::clamp(q_level, 0, static_cast<int>(grid - 1));
 
-        // Natural-to-Gray: g = n ^ (n >> 1)
-        auto natToGray = [](size_t n) -> size_t { return n ^ (n >> 1); };
-
+        // Map level -> label via the active labeling permutation.
         for (int di = -2; di <= 2; ++di) {
             for (int dq = -2; dq <= 2; ++dq) {
                 int il = i_level + di;
                 int ql = q_level + dq;
                 if (il < 0 || il >= static_cast<int>(grid) ||
                     ql < 0 || ql >= static_cast<int>(grid)) continue;
-                size_t gray_i = natToGray(static_cast<size_t>(il));
-                size_t gray_q = natToGray(static_cast<size_t>(ql));
-                size_t idx = (gray_i << bits_dim) | gray_q;
+                size_t lab_i = level2label_[static_cast<size_t>(il)];
+                size_t lab_q = level2label_[static_cast<size_t>(ql)];
+                size_t idx = (lab_i << bits_dim) | lab_q;
                 float dr = sym.real() - const_[idx].real();
                 float di2 = sym.imag() - const_[idx].imag();
                 float d = dr*dr + di2*di2;
@@ -279,6 +365,20 @@ void SymbolMapper::demapSoft(const ComplexBuf& symbols, float noise_var,
     }
 }
 
+void SymbolMapper::demapSoft(const ComplexBuf& symbols,
+                             const std::vector<float>& noise_var,
+                             std::vector<float>& llrs) const {
+    llrs.resize(symbols.size() * bps_);
+    std::vector<float> tmp;
+    for (size_t s = 0; s < symbols.size(); ++s) {
+        float nv = (s < noise_var.size()) ? noise_var[s] : 1e-3f;
+        demapSoft(symbols[s], nv, tmp);
+        for (size_t b = 0; b < bps_; ++b) {
+            llrs[s * bps_ + b] = tmp[b];
+        }
+    }
+}
+
 // =========================================================================
 // Piecewise-Linear LLR Tables
 // =========================================================================
@@ -321,12 +421,12 @@ void SymbolMapper::initPWLTables() {
         boundaries[k] = (levels[k] + levels[k + 1]) * 0.5f;
     }
 
-    // Gray code: natural-to-Gray
-    auto natToGray = [](size_t n) -> size_t { return n ^ (n >> 1); };
-
     // For each bit in this dimension, determine which levels have bit=0 vs bit=1
-    // Bit patterns: for dimension's bits (bits_dim bits), level k maps to Gray(k)
-    // bit b of Gray(k) determines if this level has bit b = 0 or 1
+    // Bit patterns: for dimension's bits (bits_dim bits), level k carries label
+    // level2label_[k]; bit b of that label determines if level has bit b = 0/1.
+    // This makes the PWL demapper exact for ANY labeling (Gray or AntiGray):
+    // it still derives each bit's nearest-0/nearest-1 levels from the true
+    // label assignment, just over a possibly non-monotone level->label map.
 
     // Build tables for 2 dimensions (I and Q are structurally identical)
     // pwl_tables_[dim][bit_within_dim] = segments
@@ -341,9 +441,9 @@ void SymbolMapper::initPWLTables() {
             // For each level, determine bit value
             std::vector<uint8_t> level_bit(G);
             for (size_t k = 0; k < G; ++k) {
-                size_t gray = natToGray(k);
+                size_t label = level2label_[k];
                 level_bit[k] = static_cast<uint8_t>(
-                    (gray >> (bits_dim - 1 - b)) & 1);
+                    (label >> (bits_dim - 1 - b)) & 1);
             }
 
             // Build segments. Regions are:
@@ -358,12 +458,33 @@ void SymbolMapper::initPWLTables() {
             float lo = -(static_cast<float>(G) + 1.0f) * norm_;
             float hi =  (static_cast<float>(G) + 1.0f) * norm_;
 
-            // Collect all breakpoints (boundaries + lo/hi), sorted ascending
+            // Collect all breakpoints, sorted ascending.
+            //
+            // For GRAY the level<->label map is monotone, so each bit's
+            // nearest-bit-0 and nearest-bit-1 levels change only at adjacent-
+            // level midpoints: the original boundary set is sufficient AND we
+            // keep it EXACTLY as before so the Gray PWL output is byte-for-byte
+            // identical to the legacy code (no roundoff perturbation of any
+            // existing test).
+            //
+            // For ANTIGRAY the map is non-monotone, so the nearest same-bit
+            // level can switch at midpoints between NON-adjacent levels too.
+            // We therefore add the midpoint of every pair of levels; the LLR is
+            // then exactly linear on each resulting interval. (These extra knots
+            // are only added for anti-Gray, so Gray is untouched.)
             std::vector<float> bkpts;
             bkpts.push_back(lo);
-            for (auto bp : boundaries) bkpts.push_back(bp);
             bkpts.push_back(hi);
+            for (auto bp : boundaries) bkpts.push_back(bp);
+            if (labeling_ != Labeling::Gray) {
+                for (size_t a = 0; a < G; ++a)
+                    for (size_t c = a + 1; c < G; ++c)
+                        bkpts.push_back((levels[a] + levels[c]) * 0.5f);
+            }
             std::sort(bkpts.begin(), bkpts.end());
+            bkpts.erase(std::unique(bkpts.begin(), bkpts.end(),
+                        [](float x, float y){ return std::abs(x - y) < 1e-6f; }),
+                        bkpts.end());
 
             for (size_t r = 0; r + 1 < bkpts.size(); ++r) {
                 float seg_start = bkpts[r];
@@ -465,6 +586,20 @@ void SymbolMapper::demapSoftPWL(const ComplexBuf& symbols, float noise_var,
     std::vector<float> tmp;
     for (size_t s = 0; s < symbols.size(); ++s) {
         demapSoftPWL(symbols[s], noise_var, tmp);
+        for (size_t b = 0; b < bps_; ++b) {
+            llrs[s * bps_ + b] = tmp[b];
+        }
+    }
+}
+
+void SymbolMapper::demapSoftPWL(const ComplexBuf& symbols,
+                                const std::vector<float>& noise_var,
+                                std::vector<float>& llrs) const {
+    llrs.resize(symbols.size() * bps_);
+    std::vector<float> tmp;
+    for (size_t s = 0; s < symbols.size(); ++s) {
+        float nv = (s < noise_var.size()) ? noise_var[s] : 1e-3f;
+        demapSoftPWL(symbols[s], nv, tmp);
         for (size_t b = 0; b < bps_; ++b) {
             llrs[s * bps_ + b] = tmp[b];
         }

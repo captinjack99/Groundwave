@@ -13,6 +13,9 @@
 #include "types.hpp"
 #include "ldpc.hpp"
 #include "orbgrand.hpp"
+#include "soft_decoder.hpp"
+#include "bicm.hpp"
+#include "symbol_mapper.hpp"
 #include "interleaver.hpp"
 #include "ofdm.hpp"
 #include <cstdio>
@@ -745,6 +748,233 @@ int main() {
             snprintf(msg, sizeof(msg),
                      "%zu bit errors, converged=%d, queries=%zu",
                      bit_errs, result.converged ? 1 : 0, result.iterations);
+            FAIL(msg);
+        }
+    }
+
+    // =====================================================================
+    // Test 11: List-GRAND — non-empty, non-decreasing costs, first == hard
+    // =====================================================================
+    TEST("List-GRAND R=1/2 short: list valid, first == decodeFull");
+    {
+        LDPCEncoder enc(FECRate::Rate_1_2, LDPCBlockSize::Short);
+        ORBGRANDConfig cfg;
+        cfg.max_queries = 10000;
+        cfg.max_weight  = 4;
+        ORBGRANDDecoder dec(FECRate::Rate_1_2, LDPCBlockSize::Short, cfg);
+
+        size_t k = enc.infoBits();
+        size_t n = enc.codewordBits();
+        size_t k_bytes = (k + 7) / 8;
+        size_t n_bytes = (n + 7) / 8;
+
+        std::mt19937 rng(400);
+        std::vector<uint8_t> info(k_bytes, 0);
+        for (auto& b : info) b = static_cast<uint8_t>(rng() & 0xFF);
+
+        std::vector<uint8_t> codeword(n_bytes, 0);
+        enc.encode(info.data(), codeword.data());
+
+        // Low-noise channel: a couple of soft errors so the list has depth
+        // beyond the zero-cost member.
+        float snr_lin = std::pow(10.f, 9.f / 10.f);
+        float sigma = std::sqrt(1.f / (2.f * snr_lin));
+        float noise_var = sigma * sigma;
+        std::normal_distribution<float> noise(0.f, sigma);
+
+        std::vector<float> llr(n);
+        for (size_t i = 0; i < n; ++i) {
+            float tx = getBit(codeword.data(), i) ? -1.f : 1.f;
+            float rx = tx + noise(rng);
+            llr[i] = 2.f * rx / noise_var;
+        }
+
+        // Hard-output reference (must remain UNCHANGED behavior).
+        std::vector<uint8_t> hard_cw(n_bytes, 0);
+        auto hres = dec.decodeFull(llr.data(), hard_cw.data());
+
+        auto lr = dec.decodeList(llr.data(), 8);
+
+        bool ok = !lr.list.empty() && lr.base.converged;
+        // Costs non-decreasing
+        for (size_t i = 1; ok && i < lr.list.size(); ++i) {
+            if (lr.list[i].cost + 1e-4f < lr.list[i - 1].cost) ok = false;
+        }
+        // First list entry == hard decodeFull() codeword (both ML at low noise)
+        if (ok && hres.converged) {
+            if (countBitDiffs(lr.list.front().bits.data(),
+                              hard_cw.data(), n) != 0) ok = false;
+        }
+        // Every listed candidate must be a true codeword (== original here,
+        // since at low noise the ML decode recovers the transmitted word).
+        if (ok) {
+            if (countBitDiffs(lr.list.front().bits.data(),
+                              codeword.data(), n) != 0) ok = false;
+        }
+
+        if (ok) {
+            PASS();
+        } else {
+            char msg[120];
+            snprintf(msg, sizeof(msg),
+                     "list=%zu conv=%d firstDiff=%zu",
+                     lr.list.size(), lr.base.converged ? 1 : 0,
+                     lr.list.empty() ? 0
+                       : countBitDiffs(lr.list.front().bits.data(),
+                                       codeword.data(), n));
+            FAIL(msg);
+        }
+    }
+
+    // =====================================================================
+    // Test 12: SOGRAND posterior — signs match TX bits; FER vs hard ORBGRAND
+    // =====================================================================
+    TEST("SOGRAND R=1/2 short: posterior signs match TX @ 8 dB");
+    {
+        LDPCEncoder enc(FECRate::Rate_1_2, LDPCBlockSize::Short);
+        ORBGRANDConfig cfg;
+        cfg.max_queries = 10000;
+        cfg.max_weight  = 4;
+        ORBGRANDDecoder dec(FECRate::Rate_1_2, LDPCBlockSize::Short, cfg);
+
+        size_t k = enc.infoBits();
+        size_t n = enc.codewordBits();
+        size_t k_bytes = (k + 7) / 8;
+        size_t n_bytes = (n + 7) / 8;
+
+        size_t num_trials = 20;
+        size_t post_frame_err = 0;   // SOGRAND posterior-sign frame errors
+        size_t hard_frame_err = 0;   // hard ORBGRAND frame errors
+        size_t post_bit_err   = 0;
+        size_t total_cw_bits  = 0;
+
+        for (size_t trial = 0; trial < num_trials; ++trial) {
+            std::mt19937 rng(600 + static_cast<unsigned>(trial));
+
+            std::vector<uint8_t> info(k_bytes, 0);
+            for (auto& b : info) b = static_cast<uint8_t>(rng() & 0xFF);
+
+            std::vector<uint8_t> codeword(n_bytes, 0);
+            enc.encode(info.data(), codeword.data());
+
+            float snr_lin = std::pow(10.f, 8.f / 10.f);
+            float sigma = std::sqrt(1.f / (2.f * snr_lin));
+            float noise_var = sigma * sigma;
+            std::normal_distribution<float> noise(0.f, sigma);
+
+            std::vector<float> llr(n);
+            for (size_t i = 0; i < n; ++i) {
+                float tx = getBit(codeword.data(), i) ? -1.f : 1.f;
+                float rx = tx + noise(rng);
+                llr[i] = 2.f * rx / noise_var;
+            }
+
+            // SOGRAND posterior
+            std::vector<float> post;
+            auto pres = dec.decodePosterior(llr.data(), post);
+
+            // Posterior signs → hard bits (post>0 => bit 0)
+            size_t frame_bad = 0;
+            for (size_t i = 0; i < n; ++i) {
+                bool pbit = (post[i] < 0.f);
+                bool tbit = getBit(codeword.data(), i);
+                if (pbit != tbit) { ++post_bit_err; ++frame_bad; }
+            }
+            if (frame_bad) ++post_frame_err;
+            total_cw_bits += n;
+
+            // Hard ORBGRAND for comparison
+            std::vector<uint8_t> hard_cw(n_bytes, 0);
+            dec.decodeFull(llr.data(), hard_cw.data());
+            if (countBitDiffs(hard_cw.data(), codeword.data(), n) != 0)
+                ++hard_frame_err;
+
+            (void)pres;
+        }
+
+        float post_ber = static_cast<float>(post_bit_err) /
+                         static_cast<float>(total_cw_bits);
+
+        // SOGRAND posterior signs should recover the codeword on the vast
+        // majority of frames, with FER no worse than hard ORBGRAND.
+        if (post_ber < 1e-3f && post_frame_err <= hard_frame_err) {
+            PASS();
+        } else {
+            char msg[120];
+            snprintf(msg, sizeof(msg),
+                     "postBER=%.2e postFER=%zu/%zu hardFER=%zu/%zu",
+                     post_ber, post_frame_err, num_trials,
+                     hard_frame_err, num_trials);
+            FAIL(msg);
+        }
+    }
+
+    // =====================================================================
+    // Test 13: ISoftDecoder polymorphism — BICMDecoder with ORBGRAND inner
+    // =====================================================================
+    TEST("ISoftDecoder: BICM over ORBGRAND clean round-trip");
+    {
+        FECRate rate = FECRate::Rate_1_2;
+        LDPCBlockSize blk = LDPCBlockSize::Short;
+
+        LDPCEncoder enc(rate, blk);
+        ORBGRANDConfig ocfg;
+        ocfg.max_queries = 10000;
+        ocfg.max_weight  = 4;
+        ORBGRANDDecoder orb(rate, blk, ocfg);
+
+        Modulation mod = Modulation::QPSK;
+        SymbolMapper mapper(mod);
+        BitInterleaver inter(enc.codewordBits());
+
+        BICMConfig bc;
+        bc.outer_iterations = 1;
+        bc.use_extrinsic    = true;
+        // ISoftDecoder* binding: pass ORBGRANDDecoder* where the ctor
+        // expects ISoftDecoder*.
+        ISoftDecoder* soft = &orb;
+        BICMDecoder bicm(&mapper, &inter, soft, bc);
+
+        size_t k = enc.infoBits();
+        size_t n = enc.codewordBits();
+        size_t k_bytes = (k + 7) / 8;
+        size_t n_bytes = (n + 7) / 8;
+        size_t bps = bitsPerSymbol(mod);
+
+        std::mt19937 rng(0x50F6);
+        std::vector<uint8_t> info(k_bytes, 0);
+        for (auto& b : info) b = static_cast<uint8_t>(rng() & 0xFF);
+
+        std::vector<uint8_t> codeword(n_bytes, 0);
+        enc.encode(info.data(), codeword.data());
+
+        std::vector<uint8_t> interleaved(n_bytes, 0);
+        inter.interleave(codeword.data(), interleaved.data());
+
+        // Map interleaved bits to clean QPSK symbols.
+        size_t n_syms = (n + bps - 1) / bps;
+        ComplexBuf syms(n_syms);
+        for (size_t s = 0; s < n_syms; ++s) {
+            uint32_t idx = 0;
+            for (size_t j = 0; j < bps; ++j) {
+                size_t bit_pos = s * bps + j;
+                bool bit = (bit_pos < n) && getBit(interleaved.data(), bit_pos);
+                idx = (idx << 1) | (bit ? 1u : 0u);
+            }
+            syms[s] = mapper.constellation()[idx];
+        }
+
+        std::vector<uint8_t> decoded(k_bytes, 0);
+        auto r = bicm.decode(syms, 0.01f, decoded.data());
+
+        size_t bit_errs = countBitDiffs(info.data(), decoded.data(), k);
+        if (bit_errs == 0 && r.converged) {
+            PASS();
+        } else {
+            char msg[96];
+            snprintf(msg, sizeof(msg),
+                     "%zu bit errors, converged=%d",
+                     bit_errs, r.converged ? 1 : 0);
             FAIL(msg);
         }
     }

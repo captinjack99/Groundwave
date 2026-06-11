@@ -18,6 +18,7 @@
 #include "opus_codec.hpp"
 #include "iq_converter.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -110,6 +111,16 @@ int main(int argc, char** argv) {
                      sample_rate);
         return 1;
     }
+    // Center frequency must sit inside (0, Nyquist) — the IQ converter
+    // ctor throws otherwise (uncaught → terminate, no message).
+    const float nyquist = static_cast<float>(sample_rate) / 2.f;
+    if (!(center_hz > 0.f && center_hz < nyquist)) {
+        std::fprintf(stderr, "Error: center freq %.0f Hz must be inside "
+                     "(0, %.0f) at this sample rate.\n",
+                     static_cast<double>(center_hz),
+                     static_cast<double>(nyquist));
+        return 1;
+    }
 
     // Slurp passband file (64-bit safe; check ftell and the short-read).
     FILE* fin = std::fopen(in_path.c_str(), "rb");
@@ -135,10 +146,20 @@ int main(int argc, char** argv) {
     // zero-padded tail into the demodulator.
     passband.resize(got);
 
-    // IQ downconvert
-    IQDownconverter dn(sample_rate, center_hz, sample_rate * 0.4f);
+    // IQ downconvert. Mirror dsca_encode's bandwidth derivation so the
+    // OFDM allocation (target_bw_hz) and the LPF agree on both ends.
+    const float signal_bw = 2.f * 0.8f * std::min(center_hz, nyquist - center_hz);
+    constexpr size_t DN_TAPS = 65;
+    IQDownconverter dn(sample_rate, center_hz, signal_bw * 0.5f, DN_TAPS);
     ComplexBuf bb;
     dn.downconvert(passband.data(), passband.size(), bb);
+
+    // The linear-phase FIR delays the stream by (taps-1)/2 samples; the
+    // encoder writes symbol-aligned passband with no TX filter, so skip
+    // exactly the group delay to restore symbol alignment.
+    constexpr size_t GROUP_DELAY = (DN_TAPS - 1) / 2;
+    if (bb.size() > GROUP_DELAY)
+        bb.erase(bb.begin(), bb.begin() + static_cast<ptrdiff_t>(GROUP_DELAY));
 
     // OFDM demodulate, run frame chain. Note: this is a simplified offline
     // pipeline assuming sample-aligned frames; a real receiver would do
@@ -147,35 +168,58 @@ int main(int argc, char** argv) {
     ofdm.fft_size    = static_cast<uint16_t>(fft_size);
     ofdm.modulation  = mod;
     ofdm.sample_rate = sample_rate;
+    ofdm.target_bw_hz = signal_bw;
     OFDMDemodulator demod(ofdm);
+    OFDMModulator   mod_ref(ofdm);   // for bitsPerOFDMSymbol (TX geometry)
 
     LDPCDecoder ldpc(fec, LDPCBlockSize::Short);
     BitInterleaver inter(ldpc.codewordBits());
 
+    // Opus decodes to any legal Opus rate regardless of the encoder's
+    // input rate; use 48 kHz so the output WAV is always well-formed
+    // (the RF sample rate is unrelated to the audio rate).
+    constexpr uint32_t AUDIO_RATE = 48000;
     OpusConfig oc;
-    oc.sample_rate = sample_rate;
+    oc.sample_rate = AUDIO_RATE;
     oc.channels    = 1;
     oc.bitrate     = 32000;
     oc.frame_ms    = 20.f;
     OpusAudioDecoder dec(oc);
 
+    // Each codeword spans ceil(codewordBits / bitsPerOFDMSymbol) whole OFDM
+    // symbols (modulateBits zero-fills the last). Aggregate the LLRs across
+    // that span before deinterleave + LDPC decode. (The previous loop
+    // demodulated ONE symbol, found llrs.size() < codewordBits, and skipped
+    // it — every symbol, every time: the tool could never decode anything.)
+    const size_t cw_bits     = ldpc.codewordBits();
+    const size_t bps_per_sym = mod_ref.bitsPerOFDMSymbol();
+    if (bps_per_sym == 0) {
+        std::fprintf(stderr, "Error: degenerate OFDM config (no data bins)\n");
+        return 1;
+    }
+    const size_t syms_per_cw    = (cw_bits + bps_per_sym - 1) / bps_per_sym;
+    const size_t sym_len        = ofdm.symbolLength();
+    const size_t samples_per_cw = syms_per_cw * sym_len;
+
     std::vector<float> all_pcm;
-    size_t sym_len = ofdm.symbolLength();
+    size_t frames_ok = 0, frames_bad = 0;
     size_t pos = 0;
-    while (pos + sym_len <= bb.size()) {
-        ComplexBuf sym(bb.begin() + pos, bb.begin() + pos + sym_len);
-        std::vector<float> llrs;
-        if (!demod.demodulateSoft(sym, llrs, demod.noiseVariance())) {
-            pos += sym_len;
-            continue;
+    while (pos + samples_per_cw <= bb.size()) {
+        std::vector<float> all_llrs;
+        all_llrs.reserve(syms_per_cw * bps_per_sym);
+        for (size_t s = 0; s < syms_per_cw; ++s) {
+            ComplexBuf sym(
+                bb.begin() + static_cast<ptrdiff_t>(pos + s * sym_len),
+                bb.begin() + static_cast<ptrdiff_t>(pos + (s + 1) * sym_len));
+            std::vector<float> llrs;
+            demod.demodulateSoft(sym, llrs, demod.noiseVariance());
+            all_llrs.insert(all_llrs.end(), llrs.begin(), llrs.end());
         }
-        // Pack hard bits → de-interleave → LDPC decode (placeholder for
-        // proper soft-decode chain; production code would use deinterleave
-        // on LLRs before LDPCDecoder::decode).
-        size_t cw = ldpc.codewordBits();
-        if (llrs.size() < cw) { pos += sym_len; continue; }
-        std::vector<float> deint(cw);
-        inter.deinterleave(llrs.data(), deint.data());
+        pos += samples_per_cw;
+
+        all_llrs.resize(cw_bits, 0.f);
+        std::vector<float> deint(cw_bits);
+        inter.deinterleave(all_llrs.data(), deint.data());
 
         std::vector<uint8_t> info((ldpc.infoBits() + 7) / 8);
         ldpc.decode(deint.data(), info.data());
@@ -183,21 +227,25 @@ int main(int argc, char** argv) {
         // Parse frame and decode Opus
         ParsedFrame pf;
         if (FrameParser::parse(info.data(), info.size(), pf) && pf.crc_ok) {
+            ++frames_ok;
             for (const auto& pkt : pf.packets) {
                 std::vector<float> pcm;
                 size_t n = dec.decode(pkt.data.data(), pkt.data.size(), pcm);
                 if (n > 0) all_pcm.insert(all_pcm.end(), pcm.begin(), pcm.end());
             }
+        } else {
+            ++frames_bad;
         }
-        pos += sym_len;
     }
 
+    std::fprintf(stderr, "Frames: %zu ok, %zu failed CRC\n",
+                 frames_ok, frames_bad);
     if (all_pcm.empty()) {
         std::fprintf(stderr, "No frames decoded successfully\n");
         return 3;
     }
     if (!wav::writeFloat16(out_path, all_pcm.data(), all_pcm.size(),
-                           sample_rate, 1)) {
+                           AUDIO_RATE, 1)) {
         std::fprintf(stderr, "Failed to write WAV\n");
         return 4;
     }

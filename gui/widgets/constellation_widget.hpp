@@ -26,6 +26,7 @@ public:
 
 protected:
     void paintEvent(QPaintEvent*) override;
+    void mousePressEvent(QMouseEvent*) override;
 
 private:
     void drawDecisionGrid(QPainter& p, const QRectF& plot, float extent,

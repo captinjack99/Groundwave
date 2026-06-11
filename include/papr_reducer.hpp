@@ -86,6 +86,12 @@ public:
      */
     PAPRStats reduce(ComplexBuf& freq_symbol, FFTEngine& fft);
 
+    /** Override the reserved-tone set with an externally-computed list (from
+     *  the SubcarrierAllocation, which carves them out of the data carriers).
+     *  Use this so TX/RX agree and the reducer operates on genuinely data-free
+     *  tones instead of stealing live data carriers. */
+    void useReservedTones(const std::vector<size_t>& reserved);
+
     /** Get the reserved tone indices */
     const std::vector<size_t>& reservedIndices() const { return reserved_indices_; }
 

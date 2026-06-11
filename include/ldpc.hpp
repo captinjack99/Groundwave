@@ -16,6 +16,7 @@
 #pragma once
 
 #include "types.hpp"
+#include "soft_decoder.hpp"
 #include <vector>
 #include <memory>
 
@@ -122,7 +123,7 @@ struct LDPCDecodeResult {
     float  avg_magnitude = 0.f; // average |LLR| after decoding (confidence)
 };
 
-class LDPCDecoder {
+class LDPCDecoder : public ISoftDecoder {
 public:
     LDPCDecoder(FECRate rate, LDPCBlockSize blk, size_t max_iter = 50,
                 LDPCConstruction construction = LDPCConstruction::Protograph);
@@ -146,10 +147,10 @@ public:
      *  @param post_out Output posterior LLRs (size n; resized as needed)
      *  @return Decode result with converged/iterations/avg_magnitude. */
     LDPCDecodeResult decodePosterior(const float* llr_in,
-                                      std::vector<float>& post_out);
+                                      std::vector<float>& post_out) override;
 
-    size_t infoBits()     const { return H_->k; }
-    size_t codewordBits() const { return H_->n; }
+    size_t infoBits()     const override { return H_->k; }
+    size_t codewordBits() const override { return H_->n; }
 
     const LDPCMatrix& matrix() const { return *H_; }
 

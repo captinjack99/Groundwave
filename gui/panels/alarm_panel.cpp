@@ -146,10 +146,12 @@ void AlarmPanel::onAlarmsUpdated(dsca::AlarmStatus status) {
     last_status_ = status;
 
     bool any_critical = status.sync_lost || status.audio_clipped || status.level_high;
-    bool any_warning  = status.snr_low   || status.evm_high      ||
-                        status.ber_high  || status.level_low;
 
-    if ((any_critical || any_warning) && !status.muted)
+    // Only the blink timer drives repaints, and onBlink() only repaints the
+    // critical indicators (warnings render steady amber via setIndicator's
+    // severity<2 branch). Starting the timer for warnings just blinks nothing
+    // and adds to alarm fatigue, so gate it on critical alarms alone.
+    if (any_critical && !status.muted)
         blink_timer_->start();
     else
         blink_timer_->stop();
@@ -196,8 +198,12 @@ void AlarmPanel::refreshLog() {
     std::vector<AlarmEvent> log_copy;
     {
         std::lock_guard<std::mutex> lock(state_.mtx);
-        // Only rebuild if the log size changed (avoid flicker)
-        if (log_list_->count() == static_cast<int>(state_.alarm_log.size())) return;
+        // Only rebuild when new events were appended. (Comparing the list
+        // count against alarm_log.size() froze the display permanently
+        // once the circular log filled — its size stays at ALARM_LOG_SIZE
+        // while events keep rotating through.)
+        if (last_log_revision_ == state_.alarm_log_revision) return;
+        last_log_revision_ = state_.alarm_log_revision;
         log_copy = state_.alarm_log;
     }
 

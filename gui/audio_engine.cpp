@@ -20,6 +20,17 @@
 
 namespace dsca {
 
+// The AUDIO content rate — Opus codec, test-tone synthesis, decoded-stream
+// playback/recording, and mic capture. Fixed at 48 kHz (a rate Opus
+// accepts) and deliberately INDEPENDENT of the RF/OFDM sample rate: audio
+// rides inside frames as bytes, so the modem's sample rate (96/192 kHz on
+// the wideband presets) is free to differ. Coupling the codec to
+// ofdm_p_.sample_rate made OpusAudioEncoder's ctor throw for every
+// non-Opus RF rate — initDSP caught it, left the DSP null, and the engine
+// sat idle: the shipped Ultra HD (96 k) and Broadcast (192 k) presets
+// bricked the engine on selection.
+constexpr uint32_t kAudioSampleRate = 48000;
+
 // =========================================================================
 // Constructor / Destructor
 // =========================================================================
@@ -47,6 +58,7 @@ void AudioEngine::startup() {
     // window between thread_.start() and the lambda would otherwise pass the
     // running_ check and double-init / create a second timer.
     if (running_.load() || thread_.isRunning()) return;
+    shutdown_requested_.store(false);
 
     // CRITICAL: move this AudioEngine onto the engine thread BEFORE starting
     // it, so the QTimer (created with `this` as parent) and processTick
@@ -65,6 +77,15 @@ void AudioEngine::startup() {
     // Connect thread started → init DSP + start timer. With AudioEngine
     // now living on `thread_`, this slot runs on the engine thread.
     connect(&thread_, &QThread::started, this, [this]() {
+        // A shutdown() issued during the startup window (between
+        // thread_.start() and this lambda) must prevent bring-up entirely.
+        // Previously init proceeded, exec() then consumed the already-
+        // pending quit() and exited instantly — leaving running_ == true
+        // with live devices and a DEAD event loop: startup() refused
+        // forever ("already running") and shutdown()'s queued teardown
+        // could never execute. F10 (or closing the window) within the
+        // startup second could wedge the engine for the session.
+        if (shutdown_requested_.load()) return;
         initDSP();
         timer_ = new QTimer(this);
         timer_->setTimerType(Qt::PreciseTimer);
@@ -80,22 +101,27 @@ void AudioEngine::startup() {
 void AudioEngine::shutdown() {
     if (!running_.load() && !thread_.isRunning()) return;
 
-    // Stop timer and teardown (must happen in engine thread)
-    if (running_.load()) {
-        QMetaObject::invokeMethod(this, [this]() {
-            if (timer_) {
-                timer_->stop();
-                delete timer_;
-                timer_ = nullptr;
-            }
+    shutdown_requested_.store(true);
+
+    // ALWAYS route teardown through the engine thread's event queue (the
+    // old code called thread_.quit() directly when running_ was still
+    // false, racing the started-lambda — see the wedge note there). The
+    // queued lambda runs after the started-lambda in every interleaving:
+    // either a full teardown (init completed) or a bare quit (init was
+    // skipped by shutdown_requested_).
+    QMetaObject::invokeMethod(this, [this]() {
+        if (timer_) {
+            timer_->stop();
+            delete timer_;
+            timer_ = nullptr;
+        }
+        if (running_.load()) {
             teardownDSP();
             running_.store(false);
             emit engineStopped();
-            thread_.quit();
-        }, Qt::QueuedConnection);
-    } else {
+        }
         thread_.quit();
-    }
+    }, Qt::QueuedConnection);
 
     // Wait for the engine thread to FULLY stop before moving this object back
     // to the GUI thread / allowing destruction. Proceeding while the engine
@@ -127,17 +153,15 @@ void AudioEngine::initDSP() {
             modem_p_.complex_loopback = false;
         } else {
             modem_p_.loopback = true;
-            // Software loopback MUST use the complex (baseband) path. The
-            // passband real-IF round trip is not invertible for a
-            // full-bandwidth OFDM signal: at fc = sample_rate/4 the occupied
-            // complex bandwidth (~±21 kHz for the default FFT256/48 kHz config)
-            // exceeds the real passband, and the downconverter's anti-image LPF
-            // can't reject the 2·fc image — every subcarrier above ~3 kHz
-            // baseband is corrupted, so ~30% of bits flip and NO codeword
-            // decodes. The complex loopback stores/returns the baseband verbatim
-            // (bit-exact, zero-delay), which is what the demodulator expects.
-            // (Hardware mode above keeps the real passband — that's a separate
-            // narrowband concern.) Honor an explicit override if one was set.
+            // Software loopback uses the complex (baseband) path: it stores
+            // and returns the baseband verbatim — bit-exact and zero-delay —
+            // so SW-loopback diagnostics isolate the modem from the analog
+            // model. The passband real-IF round trip also works now that the
+            // subcarrier allocation is DC-centered with guards at the band
+            // edges (computeAllocation) — that's what HW/vcable mode and the
+            // CLI's internal mode exercise — but it adds AGC settling, LPF
+            // group delay, and band-edge rolloff that belong in passband
+            // testing, not in the GUI's reference loopback.
             if (!modem_p_.complex_loopback) modem_p_.complex_loopback = true;
         }
         // Enable the raised-cosine TX power ramp so the carrier ramps up at
@@ -180,6 +204,13 @@ void AudioEngine::initDSP() {
                 modem_ = std::make_unique<SoundcardModem>(modem_p_, ofdm_p_);
             }
         }
+
+        // PAPR tone-reservation carves data-free carriers out of the
+        // allocation; the modulator AND demodulator below must agree on that
+        // split, so set the fraction on the OFDM params BEFORE building them.
+        // Zero when PAPR-TR is off → no carve, byte-identical allocation.
+        ofdm_p_.papr_reserve_fraction =
+            ecfg_.papr.enabled ? ecfg_.papr.reserve_fraction : 0.f;
 
         // OFDM
         ofdm_mod_   = std::make_unique<OFDMModulator>(ofdm_p_);
@@ -228,9 +259,16 @@ void AudioEngine::initDSP() {
         bcfg.outer_iterations = std::max<size_t>(1, ecfg_.bicm_outer_iter);
         bcfg.ldpc_inner_iter  = 25;
         bcfg.use_extrinsic    = true;
+        // Inner ISoftDecoder selection: BP (default) or SOGRAND/ORBGRAND.
+        // Both are members declared before bicm_decoder_ (see audio_engine.hpp),
+        // so the chosen inner outlives the borrowed pointer here. Default is BP:
+        // measurement showed BP-inner beats SOGRAND-inner at every tested point.
+        ISoftDecoder* bicm_inner = ecfg_.bicm_inner_sogrand
+                                       ? static_cast<ISoftDecoder*>(ldpc_dec_orb_.get())
+                                       : static_cast<ISoftDecoder*>(ldpc_dec_bp_.get());
         bicm_decoder_ = std::make_unique<BICMDecoder>(
             bicm_mapper_.get(), interleaver_.get(),
-            ldpc_dec_bp_.get(), bcfg);
+            bicm_inner, bcfg);
 
         // BICM-ID drives its own BP inner loop and takes precedence over
         // the ORBGRAND decoder — they can't both run on a codeword. Note
@@ -270,7 +308,7 @@ void AudioEngine::initDSP() {
         // Opus packet size in bytes ≈ bitrate × frame_ms / 8000.
         // We want packet_bytes ≤ frame_capacity, with ~10% margin.
         OpusConfig ocfg;
-        ocfg.sample_rate = ofdm_p_.sample_rate;
+        ocfg.sample_rate = kAudioSampleRate;
         ocfg.channels    = 1;
         ocfg.frame_ms    = 20.0f;        // standard streaming frame
 
@@ -312,6 +350,9 @@ void AudioEngine::initDSP() {
                 alloc.data_indices,
                 alloc.pilot_indices,
                 ecfg_.papr);
+            // Operate on the allocation's carved reserved tones (data-free)
+            // instead of letting the reducer steal live data carriers.
+            papr_->useReservedTones(alloc.reserved_indices);
         }
 
         // Hierarchical modulation mapper
@@ -339,7 +380,7 @@ void AudioEngine::initDSP() {
             ms_mode_active_ = true;
 
             OpusConfig side_cfg;
-            side_cfg.sample_rate = ofdm_p_.sample_rate;
+            side_cfg.sample_rate = kAudioSampleRate;
             side_cfg.channels    = 1;
             // Side carries the diff signal — typically lower energy and content
             // than Mid; halve the bitrate budget to match.
@@ -361,8 +402,7 @@ void AudioEngine::initDSP() {
             // Reallocating on SR change ensures the cascade center
             // frequencies retune.
             for (auto& sr : side_recons_) {
-                sr = std::make_unique<SideReconstructor>(
-                    ofdm_p_.sample_rate);
+                sr = std::make_unique<SideReconstructor>(kAudioSampleRate);
             }
         } else {
             for (auto& sr : side_recons_) sr.reset();
@@ -399,7 +439,7 @@ void AudioEngine::initDSP() {
         audio_monitor_.reset();
         if (audio_monitor_ = std::make_unique<HWAudioDevice>(); audio_monitor_->init()) {
             HWAudioConfig pc;
-            pc.sample_rate     = ofdm_p_.sample_rate;
+            pc.sample_rate     = kAudioSampleRate;  // decoded-audio rate, not RF
             pc.buffer_frames   = 1024;
             pc.playback_device = -1;  // system default
             std::vector<RingBuffer*> rings;
@@ -439,10 +479,22 @@ void AudioEngine::initDSP() {
         tx_vcm_last_mod_ = ofdm_p_.modulation;
         tx_vcm_last_fec_ = frame_p_.fec_rate;
 
-        // RX PLS tracking
+        // RX PLS tracking. The PLS codeword is PLS_CODED_BITS BPSK symbols;
+        // when the allocation has fewer data subcarriers than that (FFT
+        // 64/128, or a narrow target_bw), TX's modulateSymbols emits
+        // ceil(PLS_CODED_BITS / dataCount) OFDM symbols — RX must consume
+        // the SAME count. Consuming a fixed single symbol slipped the
+        // stream by the surplus every frame and nothing ever decoded at
+        // those FFT sizes (the shipped "Emergency" preset among them).
         pls_received_ = false;
         rx_frame_count_ = 0;
-        pls_samples_needed_ = ofdm_p_.symbolLength(); // one OFDM symbol for PLS
+        rx_pls_pending_ = false;
+        {
+            size_t dc = ofdm_mod_ ? ofdm_mod_->dataSubcarriers() : 0;
+            size_t pls_syms = (dc > 0)
+                ? (static_cast<size_t>(PLS_CODED_BITS) + dc - 1) / dc : 1;
+            pls_samples_needed_ = pls_syms * ofdm_p_.symbolLength();
+        }
 
         live_stats_ = ModemStats{};
         sync_fsm_.reset();
@@ -549,7 +601,7 @@ void AudioEngine::syncConfig() {
         mc.dev  = std::make_unique<HWAudioDevice>();
         if (mc.dev->init()) {
             HWAudioConfig cap_cfg;
-            cap_cfg.sample_rate    = ofdm_p_.sample_rate;
+            cap_cfg.sample_rate    = kAudioSampleRate;  // audio rate, not RF
             cap_cfg.capture_device = dev_id;
             if (mc.dev->startCaptureOnly(*mc.ring, cap_cfg)) {
                 mic_captures_.emplace(dev_id, std::move(mc));
@@ -718,7 +770,17 @@ void AudioEngine::onConfigChanged() {
     // Called from GUI thread via signal — will be processed in engine thread
     // Full DSP re-init on config change (modcod change requires new encoder/decoder)
     if (!running_.load()) return;  // Not running — nothing to reinit
-    QMetaObject::invokeMethod(this, [this]() {
+    // COALESCE queued rebuilds: each one is expensive (~1+ s with HW audio:
+    // device close + reopen), and a burst of GUI changes (slider drag,
+    // preset hopping) queues one PER change. Only the LAST queued rebuild
+    // reflects the final config — the stale ones just serialize seconds of
+    // dead time in front of it (and in front of a pending Stop: the GUI
+    // walker measured 6+ s of frozen UI from exactly this). Each queued
+    // lambda skips itself unless it is the newest, or a shutdown began.
+    const uint64_t gen = ++config_gen_;
+    QMetaObject::invokeMethod(this, [this, gen]() {
+        if (gen != config_gen_.load()) return;       // superseded
+        if (shutdown_requested_.load()) return;      // stopping anyway
         if (timer_) timer_->stop();
         teardownDSP();
         initDSP();
@@ -749,7 +811,29 @@ void AudioEngine::setEngineConfig(const AudioEngineConfig& cfg) {
 // VCM per-slot FEC rebuild
 // =========================================================================
 
-void AudioEngine::rebuildFEC(FECRate rate, Modulation /*mod*/) {
+void AudioEngine::rebuildFEC(FECRate rate, Modulation mod) {
+    // A confirmed PLS/VCM/AMC modulation change must rebuild the OFDM
+    // mod/demod too: the SymbolMapper is baked into both, and the RX
+    // codeword slicing derives from bitsPerOFDMSymbol(). The old signature
+    // ignored the modulation, so a remote TX's constellation switch kept
+    // being demapped at the stale order forever. The fresh demodulator
+    // starts with a cold channel estimate — drop the sync latch so the
+    // next periodic preamble re-seeds it via the wide-scan re-acquire,
+    // exactly like first acquisition.
+    if (mod != ofdm_p_.modulation) {
+        ofdm_p_.modulation = mod;
+        ofdm_mod_   = std::make_unique<OFDMModulator>(ofdm_p_);
+        ofdm_demod_ = std::make_unique<OFDMDemodulator>(ofdm_p_);
+        if (ecfg_.use_mmse) ofdm_demod_->enableMMSE();
+        if (modem_p_.enable_afc) {
+            ofdm_demod_->enablePhaseTracker();
+            SROConfig sro_cfg; sro_cfg.ema_alpha = 0.30f;
+            ofdm_demod_->enableSROTracking(sro_cfg);
+        }
+        preamble_received_ = false;
+        rx_pls_pending_    = false;
+    }
+
     auto blk = LDPCBlockSize::Short;
     ldpc_enc_     = std::make_unique<LDPCEncoder>(rate, blk);
     ldpc_dec_bp_  = std::make_unique<LDPCDecoder>(rate, blk, 25);
@@ -767,9 +851,13 @@ void AudioEngine::rebuildFEC(FECRate rate, Modulation /*mod*/) {
     bcfg.outer_iterations = std::max<size_t>(1, ecfg_.bicm_outer_iter);
     bcfg.ldpc_inner_iter  = 25;
     bcfg.use_extrinsic    = true;
+    // Inner ISoftDecoder selection (BP default, SOGRAND opt-in) — mirrors initDSP.
+    ISoftDecoder* bicm_inner = ecfg_.bicm_inner_sogrand
+                                   ? static_cast<ISoftDecoder*>(ldpc_dec_orb_.get())
+                                   : static_cast<ISoftDecoder*>(ldpc_dec_bp_.get());
     bicm_decoder_ = std::make_unique<BICMDecoder>(
         bicm_mapper_.get(), interleaver_.get(),
-        ldpc_dec_bp_.get(), bcfg);
+        bicm_inner, bcfg);
 
     k_bytes_  = ldpc_enc_->infoBytes();
     n_bytes_  = ldpc_enc_->codewordBytes();
@@ -796,24 +884,29 @@ void AudioEngine::rebuildFEC(FECRate rate, Modulation /*mod*/) {
 // RX PLS detection (decode PLS from post-preamble OFDM symbol)
 // =========================================================================
 
-// Consume and decode exactly ONE PLS OFDM symbol from the front of rx_accum_.
-// TX prepends a PLS symbol to EVERY data codeword (per-frame ModCod signaling),
-// so the RX must strip one PLS symbol before each codeword — otherwise the data
-// stream slips by one symbol every frame and every codeword fails CRC (the
-// loopback-never-decodes bug). The caller guarantees the symbol is present.
+// Consume and decode the PLS block from the front of rx_accum_. TX prepends
+// it to EVERY data codeword (per-frame ModCod signaling); it spans
+// ceil(PLS_CODED_BITS / dataCount) OFDM symbols (one at FFT >= 256 with
+// typical allocations, 2-3 at FFT 64/128). The RX must strip exactly that
+// many — a fixed one-symbol strip slips the stream by the surplus every
+// frame and every codeword fails CRC. The caller guarantees the samples
+// are present.
 void AudioEngine::processRXPLS() {
     if (!ofdm_demod_ || rx_accum_.size() < pls_samples_needed_) return;
 
-    // Extract one OFDM symbol for PLS
-    ComplexBuf pls_sym(
-        rx_accum_.begin(),
-        rx_accum_.begin() + static_cast<ptrdiff_t>(pls_samples_needed_));
+    // Demodulate each PLS OFDM symbol → concatenated equalized subcarriers.
+    const size_t sym_len = ofdm_p_.symbolLength();
+    ComplexBuf pls_data_syms;
+    for (size_t off = 0; off + sym_len <= pls_samples_needed_; off += sym_len) {
+        ComplexBuf pls_sym(
+            rx_accum_.begin() + static_cast<ptrdiff_t>(off),
+            rx_accum_.begin() + static_cast<ptrdiff_t>(off + sym_len));
+        ComplexBuf eq;
+        ofdm_demod_->demodulate(pls_sym, eq);
+        pls_data_syms.insert(pls_data_syms.end(), eq.begin(), eq.end());
+    }
     rx_accum_.erase(rx_accum_.begin(),
                     rx_accum_.begin() + static_cast<ptrdiff_t>(pls_samples_needed_));
-
-    // Demodulate PLS symbol → equalized data subcarriers.
-    ComplexBuf pls_data_syms;
-    ofdm_demod_->demodulate(pls_sym, pls_data_syms);
 
     // BPSK soft values (real part; > 0 ⇒ bit 0). decodePLSSoft soft-combines
     // the repeated Reed-Muller copies that fit in the data subcarriers and
@@ -859,7 +952,7 @@ void AudioEngine::recoverAudioDevicesIfNeeded() {
     if (audio_monitor_ && !audio_monitor_->isRunning()) {
         audio_monitor_->stop();  // ensure inner state is cleared
         HWAudioConfig pc;
-        pc.sample_rate     = ofdm_p_.sample_rate;
+        pc.sample_rate     = kAudioSampleRate;  // decoded-audio rate, not RF
         pc.buffer_frames   = 1024;
         pc.playback_device = -1;
         std::vector<RingBuffer*> rings;
@@ -885,7 +978,7 @@ void AudioEngine::recoverAudioDevicesIfNeeded() {
         if (mc.dev && !mc.dev->isRunning() && mc.ring) {
             mc.dev->stop();
             HWAudioConfig cap_cfg;
-            cap_cfg.sample_rate    = ofdm_p_.sample_rate;
+            cap_cfg.sample_rate    = kAudioSampleRate;  // audio rate, not RF
             cap_cfg.capture_device = kv.first;
             if (!mc.dev->startCaptureOnly(*mc.ring, cap_cfg)) {
                 std::fprintf(stderr,
@@ -1000,7 +1093,7 @@ void AudioEngine::processTick() {
 void AudioEngine::generateTestAudio(float* pcm, size_t samples) {
     float freq = ecfg_.tone_freq_hz;
     float amp  = ecfg_.tone_amplitude;
-    float sr   = static_cast<float>(ofdm_p_.sample_rate);
+    float sr   = static_cast<float>(kAudioSampleRate);  // audio rate, not RF
     float phase_inc = 2.f * static_cast<float>(M_PI) * freq / sr;
 
     // Apply TX gain
@@ -1582,30 +1675,102 @@ void AudioEngine::processRX() {
         size_t long_total  = 2 * ofdm_p_.symbolLength();
         size_t preamble_len = short_total + long_total;
 
-        // Re-acquisition realign: if we previously had sync and lost it, the
-        // stream is no longer front-aligned to a preamble. Use the
-        // synchronizer's Schmidl-Cox coarse correlation to find the next
-        // preamble in the buffer and drop everything before it, so the
-        // front-extraction below lands on the real preamble. Gated on
-        // had_sync_, so the initial-acquisition path is byte-for-byte
-        // unchanged (it still assumes the preamble is at the front, which the
-        // TX guarantees at burst start).
-        if (had_sync_ && sync_ && rx_accum_.size() >= preamble_len) {
-            SyncResult sr;
-            if (sync_->coarseSync(rx_accum_, sr) && sr.valid &&
-                sr.timing_offset > 0) {
-                size_t off = std::min<size_t>(
-                    static_cast<size_t>(sr.timing_offset), rx_accum_.size());
-                rx_accum_.erase(rx_accum_.begin(),
-                                rx_accum_.begin() + static_cast<ptrdiff_t>(off));
-            }
-        }
-
+        // Re-acquisition is handled below by a wide fineSync ACQUIRE scan (the
+        // had_sync_ branch): after sync loss the preamble is no longer front-
+        // aligned and may sit an arbitrary number of samples into rx_accum_, so
+        // we cross-correlate against the known ZC long-preamble body to find its
+        // true start. (This replaces the old Schmidl-Cox coarse trim, whose
+        // [0,N) CP-autocorrelation search could only localize within a symbol
+        // and peaked at every boundary — so it could realign to the WRONG one.)
         if (rx_accum_.size() >= preamble_len) {
+            // Fine-timing acquisition. The Schmidl-Cox CP autocorrelation only
+            // snaps to *a* symbol boundary — its metric peaks at EVERY symbol
+            // edge, so on re-acquire it can land a whole symbol early/late, and
+            // even on a front-aligned burst a few samples of group delay leave
+            // the FFT window misplaced. fineSync cross-correlates the incoming
+            // stream against the known long-preamble body (the Zadoff-Chu CAZAC
+            // symbol, whose sharp autocorrelation makes this peak unambiguous)
+            // to pin the long symbol's start to the sample. It searches a ±N/8
+            // window around the body guess; we centre that guess on the nominal
+            // body position (short preamble + first CP). We then back out where
+            // the whole preamble begins so the slice below and the consume-erase
+            // stay consistent.
+            //
+            // Common case (first-ever, front-aligned burst) stays byte-stable:
+            // the search is centred on the nominal body offset with the narrow
+            // ±N/8 window, the ZC autocorrelation peaks there, and pre_start
+            // resolves to 0.
+            //
+            // Re-acquisition (had_sync_) is the hard case: a HW-audio dropout can
+            // leave the preamble an arbitrary number of samples into rx_accum_,
+            // more than one symbol — beyond what coarseSync's [0,N) CP search can
+            // localize. There we hand fineSync a wide search_range so it SCANS
+            // the buffer for the ZC body and locks onto the true start, rather
+            // than trusting coarseSync to have landed on the right boundary.
+            size_t pre_start = 0;
+            const size_t cp = ofdm_p_.cpLength();
+            if (sync_) {
+                SyncResult fr;
+                bool found = false;
+                if (had_sync_) {
+                    // Wide ACQUIRE scan over the whole buffer.
+                    int centre = static_cast<int>(rx_accum_.size() / 2);
+                    found = sync_->fineSync(rx_accum_, centre, fr,
+                                            rx_accum_.size());
+                } else {
+                    // Narrow refine around the nominal front-aligned body
+                    // (keeps the common loopback case byte-stable), then a
+                    // wide-scan fallback: a first acquire over real audio
+                    // (HW capture started independently of the TX, plus
+                    // FIR group delays) puts the preamble at an arbitrary
+                    // offset the +/-N/8 window can't reach.
+                    int body_guess = static_cast<int>(short_total + cp);
+                    found = sync_->fineSync(rx_accum_, body_guess, fr);
+                    if (!(found && fr.valid)) {
+                        int centre = static_cast<int>(rx_accum_.size() / 2);
+                        found = sync_->fineSync(rx_accum_, centre, fr,
+                                                rx_accum_.size());
+                    }
+                }
+                if (found && fr.valid) {
+                    // fr.timing_offset is the long-symbol BODY start; the full
+                    // preamble begins cp+short_total samples earlier. Clamp to
+                    // a valid, fully-buffered window so the erase/slice below
+                    // can never run off either end.
+                    long ps = static_cast<long>(fr.timing_offset)
+                            - static_cast<long>(cp)
+                            - static_cast<long>(short_total);
+                    if (ps < 0) ps = 0;
+                    if (static_cast<size_t>(ps) + preamble_len > rx_accum_.size())
+                        ps = static_cast<long>(rx_accum_.size() - preamble_len);
+                    pre_start = static_cast<size_t>(ps);
+                } else {
+                    // VALIDITY GATE (audit): no ZC body anywhere in the
+                    // buffer — there is no preamble here, only noise, idle
+                    // hiss, or data tails. The old code fell through with
+                    // pre_start = 0 and processPreamble() "succeeded" on
+                    // whatever was buffered (its only check is length),
+                    // latching a fake lock that an RX keyed up before its
+                    // TX could never escape — recovery was gated on
+                    // had_sync_, which requires a CRC-good frame that never
+                    // comes. Keep one preamble-length of tail (a real
+                    // preamble can straddle the chunk boundary), report the
+                    // miss to the FSM, and scan again next tick.
+                    live_stats_.sync_state = sync_fsm_.feed(false, 0.0f, 1.0f);
+                    if (rx_accum_.size() > preamble_len) {
+                        rx_accum_.erase(
+                            rx_accum_.begin(),
+                            rx_accum_.begin() + static_cast<ptrdiff_t>(
+                                rx_accum_.size() - preamble_len));
+                    }
+                    return;
+                }
+            }
+
             // Extract long training symbols for channel estimation
             ComplexBuf long_syms(
-                rx_accum_.begin() + static_cast<ptrdiff_t>(short_total),
-                rx_accum_.begin() + static_cast<ptrdiff_t>(preamble_len));
+                rx_accum_.begin() + static_cast<ptrdiff_t>(pre_start + short_total),
+                rx_accum_.begin() + static_cast<ptrdiff_t>(pre_start + preamble_len));
 
             if (ofdm_demod_->processPreamble(long_syms)) {
                 preamble_received_ = true;
@@ -1613,6 +1778,7 @@ void AudioEngine::processRX() {
                 // per-codeword loop below counts from here to skip the next
                 // periodic preamble at the right cadence.
                 rx_frame_count_ = 0;
+                rx_pls_pending_ = false;
                 live_stats_.snr_db = ofdm_demod_->snrEstimate();
                 // Feed the FSM: preamble detected, perfect correlation,
                 // BER unknown yet (assume good for the acquire path).
@@ -1631,19 +1797,35 @@ void AudioEngine::processRX() {
                             ? 20.f * std::log10(m) : -80.f);
                     }
                 };
-                // Iterate active range for monotone subcarrier-index axis
-                size_t lo = ofdm_p_.guardLeft();
-                size_t hi = ofdm_p_.fft_size - ofdm_p_.guardRight();
-                for (size_t k = lo; k < hi; ++k) pushDb(k);
+                // Iterate the ACTIVE bins in ascending-frequency order. The
+                // allocation is DC-centered in natural FFT order (+f in
+                // [1, N/2), -f above N/2), so the old contiguous
+                // [guardLeft, N-guardRight) walk no longer matches the
+                // active set — it crossed the Nyquist guard hole and gave
+                // the widget a garbled frequency axis.
+                std::vector<bool> act(ofdm_p_.fft_size, false);
+                for (size_t k : alloc.data_indices)  act[k] = true;
+                for (size_t k : alloc.pilot_indices) act[k] = true;
+                const size_t Nfft = ofdm_p_.fft_size;
+                for (size_t k = Nfft / 2; k < Nfft; ++k)   // -Nyquist .. -df
+                    if (act[k]) pushDb(k);
+                for (size_t k = 0; k < Nfft / 2; ++k)      // DC .. +Nyquist
+                    if (act[k]) pushDb(k);
                 bridge_.pushChannelResponse(mag_db);
             } else {
                 // No valid preamble decode this attempt
                 live_stats_.sync_state = sync_fsm_.feed(false, 0.0f, 1.0f);
             }
 
-            // Consume preamble from accumulator
-            rx_accum_.erase(rx_accum_.begin(),
-                            rx_accum_.begin() + static_cast<ptrdiff_t>(preamble_len));
+            // Consume everything up to AND including the preamble. With fine
+            // timing, the real preamble may start pre_start samples into the
+            // buffer (re-acquire landed early, or there was leading slack); drop
+            // that prefix too so the payload that follows is front-aligned for
+            // the per-codeword loop.
+            rx_accum_.erase(
+                rx_accum_.begin(),
+                rx_accum_.begin() +
+                    static_cast<ptrdiff_t>(pre_start + preamble_len));
         }
         return; // Wait for preamble before decoding data
     }
@@ -1678,29 +1860,78 @@ void AudioEngine::processRX() {
         size_t syms_per_cw    = (n_cw_ + bits_per_sym - 1) / bits_per_sym;
         size_t samples_per_cw = syms_per_cw * rx_sym_len_;
 
-        // frame 0's preamble was consumed by the acquisition block above, hence
-        // the rx_frame_count_ > 0 guard.
-        bool skip_preamble = (preamble_interval_ > 0 && rx_frame_count_ > 0 &&
-                              rx_frame_count_ % preamble_interval_ == 0);
-        size_t need = (skip_preamble ? preamble_len : 0)
-                    + pls_samples_needed_ + samples_per_cw;
-        if (rx_accum_.size() < need) break;
-        ++codewords_this_tick;
+        // rx_pls_pending_: the previous iteration consumed this frame's
+        // preamble/PLS but the (post-PLS-rebuild) codeword wasn't fully
+        // buffered yet — resume HERE without re-stripping anything.
+        if (!rx_pls_pending_) {
+            // frame 0's preamble was consumed by the acquisition block above,
+            // hence the rx_frame_count_ > 0 guard.
+            bool skip_preamble = (preamble_interval_ > 0 && rx_frame_count_ > 0 &&
+                                  rx_frame_count_ % preamble_interval_ == 0);
+            size_t need = (skip_preamble ? preamble_len : 0)
+                        + pls_samples_needed_ + samples_per_cw;
+            if (rx_accum_.size() < need) break;
 
-        if (skip_preamble) {
-            // Refresh the channel estimate from the retransmitted preamble,
-            // then consume it.
-            ComplexBuf long_syms(
-                rx_accum_.begin() + static_cast<ptrdiff_t>(short_total),
-                rx_accum_.begin() + static_cast<ptrdiff_t>(preamble_len));
-            ofdm_demod_->processPreamble(long_syms);
-            rx_accum_.erase(rx_accum_.begin(),
-                            rx_accum_.begin() + static_cast<ptrdiff_t>(preamble_len));
+            if (skip_preamble) {
+                // Refresh the channel estimate from the retransmitted
+                // preamble, then consume it.
+                ComplexBuf long_syms(
+                    rx_accum_.begin() + static_cast<ptrdiff_t>(short_total),
+                    rx_accum_.begin() + static_cast<ptrdiff_t>(preamble_len));
+                ofdm_demod_->processPreamble(long_syms);
+                rx_accum_.erase(rx_accum_.begin(),
+                                rx_accum_.begin() + static_cast<ptrdiff_t>(preamble_len));
+            }
+
+            // Strip + decode this frame's PLS block (per-frame ModCod
+            // signalling).
+            processRXPLS();
+            ++rx_frame_count_;
+            rx_pls_pending_ = true;
+
+            // The PLS may have just switched the modcod (VCM per-slot, AMC,
+            // or a remote TX change): rebuildFEC inside processRXPLS updates
+            // n_cw_, so the codeword geometry computed at loop top is stale
+            // for exactly the frame that FOLLOWS the announcing PLS — it was
+            // sliced with the old length and the stream shifted by the
+            // difference, CRC-failing every frame until resync. Recompute
+            // with the post-PLS parameters before slicing.
+            bits_per_sym = ofdm_mod_->bitsPerOFDMSymbol();
+            if (bits_per_sym == 0) break;
+            syms_per_cw    = (n_cw_ + bits_per_sym - 1) / bits_per_sym;
+            samples_per_cw = syms_per_cw * rx_sym_len_;
         }
 
-        // Strip + decode this frame's PLS symbol (per-frame ModCod signalling).
-        processRXPLS();
-        ++rx_frame_count_;
+        // If the (possibly re-sized) codeword isn't fully buffered, leave it
+        // for the next tick; rx_pls_pending_ remembers we already consumed
+        // this frame's preamble + PLS.
+        if (rx_accum_.size() < samples_per_cw) break;
+        rx_pls_pending_ = false;
+        ++codewords_this_tick;
+
+        // Symbol-timing tracking. Over a long burst the RX soundcard clock
+        // drifts against the TX clock, so the FFT window slowly slides off the
+        // CP. trackTiming() runs the CP early/late correlation on the next
+        // symbol and returns a -1/0/+1 nudge; we apply it to the window by
+        // dropping one extra leading sample (+1, window late) or holding one
+        // back (-1, window early, achieved by duplicating the front sample so
+        // the slice starts one sample earlier). The accumulator gain inside
+        // trackTiming is small (0.05), so on a drift-free stream it returns 0
+        // every time and this is a no-op — which keeps the loopback tests (no
+        // clock offset) byte-stable. Guarded so a nudge can never under/overrun
+        // rx_accum_.
+        if (timing_track_enabled_ && sync_ &&
+            rx_accum_.size() >= samples_per_cw + 2) {
+            int nudge = sync_->trackTiming(rx_accum_);
+            if (nudge > 0) {
+                // Window is late → advance by discarding one leading sample.
+                rx_accum_.erase(rx_accum_.begin());
+            } else if (nudge < 0) {
+                // Window is early → retard by repeating the leading sample so
+                // the codeword slice begins one sample sooner.
+                rx_accum_.insert(rx_accum_.begin(), rx_accum_.front());
+            }
+        }
 
         // Extract one codeword's worth of OFDM symbols (the data following PLS).
         ComplexBuf cw_samples(
@@ -1963,36 +2194,31 @@ void AudioEngine::processRX() {
         ComplexBuf bicm_syms;
         if (bicm_id_active) bicm_syms.reserve(rx_sym_len_ * 4);
 
-        // One mapper for the whole codeword (was constructed per OFDM
-        // symbol — full constellation + PWL tables rebuilt every symbol).
-        SymbolMapper sm(ofdm_p_.modulation);
-
         for (size_t base = 0; base + rx_sym_len_ <= cw_samples.size();
              base += rx_sym_len_) {
             ComplexBuf one_sym(
                 cw_samples.begin() + static_cast<ptrdiff_t>(base),
                 cw_samples.begin() + static_cast<ptrdiff_t>(base + rx_sym_len_));
 
-            // Soft demodulation for FEC.
+            // Soft demodulation for FEC. ONE demodulator pass per symbol:
+            // the eq_out parameter hands back the equalized symbols for the
+            // constellation display, so neither branch re-runs demodulate()
+            // (the old DD branch did — re-running the FFT and double-
+            // advancing the CFO derotation NCO, MMSE, phase tracker and SRO
+            // estimator: with a nonzero preamble CFO estimate the extra
+            // sym_len NCO advance per symbol re-introduced the very offset
+            // the Moose estimator had corrected). Both branches demap
+            // through the demodulator's per-bin |H|^2 noise weighting —
+            // the scalar-noise local demap previously used here forfeited
+            // the per-bin gain on every frequency-selective channel. (#54)
             std::vector<float> llrs;
             ComplexBuf data_syms;
             if (ecfg_.use_dd_chest) {
-                // Decision-directed refinement does its own equalize pass;
-                // it also returns nothing for the constellation, so we let
-                // it own the demodulate and pull the equalized symbols from
-                // the demod afterwards for display.
                 ofdm_demod_->demodulateSoftDD(one_sym, llrs, noise_var,
-                                              ecfg_.use_pwl_llr);
-                ofdm_demod_->demodulate(one_sym, data_syms);
+                                              ecfg_.use_pwl_llr, &data_syms);
             } else {
-                // Demodulate ONCE, reuse the equalized symbols for both the
-                // constellation display and the soft demap. The old code
-                // demodulated a second time here, which re-ran the FFT and
-                // double-advanced the stateful MMSE/phase trackers (feeding
-                // doubly-updated phase into the LLRs). (#54)
-                ofdm_demod_->demodulate(one_sym, data_syms);
-                if (ecfg_.use_pwl_llr) sm.demapSoftPWL(data_syms, noise_var, llrs);
-                else                   sm.demapSoft   (data_syms, noise_var, llrs);
+                ofdm_demod_->demodulateSoft(one_sym, llrs, noise_var,
+                                            ecfg_.use_pwl_llr, &data_syms);
             }
 
             // Accumulate equalized symbols for the batched constellation
@@ -2240,6 +2466,7 @@ void AudioEngine::processRX() {
                     // re-correlates to the next preamble and resets
                     // rx_frame_count_ for fresh per-frame alignment.
                     preamble_received_ = false;
+                    rx_pls_pending_    = false;
                     consec_bad_ticks_  = 0;
                 }
             }
@@ -2402,7 +2629,10 @@ bool AudioEngine::startStreamRecording(size_t id, const std::string& path) {
     rec->f = std::fopen(path.c_str(), "wb");
     if (!rec->f) return false;
     rec->path        = path;
-    rec->sample_rate = ofdm_p_.sample_rate ? ofdm_p_.sample_rate : 48000u;
+    // Decoded stream PCM is at the fixed audio rate, NOT the RF rate —
+    // stamping ofdm_p_.sample_rate made 96/192 kHz-preset recordings play
+    // 2-4x fast (and was an unlocked cross-thread read of engine state).
+    rec->sample_rate = kAudioSampleRate;
     rec->channels    = 1;
     writeWavHeader(rec->f, rec->sample_rate, rec->channels, 0);
     std::lock_guard<std::mutex> lk(io_mtx_);   // engine thread reads this slot

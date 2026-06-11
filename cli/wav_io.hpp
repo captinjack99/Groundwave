@@ -90,9 +90,12 @@ inline bool readFloat(const std::string& path, std::vector<float>& out, WavInfo&
             data_len = std::min<size_t>(cklen, avail);
             break;
         }
-        // Advance by the chunk; guard against an overflowing/garbage cklen
-        // that would wrap or stall the walk.
-        size_t next = pos + 8 + static_cast<size_t>(cklen);
+        // Advance by the chunk — RIFF chunks are WORD-aligned, so an
+        // odd-sized chunk is followed by one pad byte (legal WAVs with an
+        // odd-length LIST/bext chunk before `data` misparsed without it).
+        // Guard against an overflowing/garbage cklen that would wrap or
+        // stall the walk.
+        size_t next = pos + 8 + static_cast<size_t>(cklen) + (cklen & 1u);
         if (next <= pos) break;           // overflow / zero-progress guard
         pos = next;
     }

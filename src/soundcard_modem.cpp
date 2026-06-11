@@ -101,16 +101,19 @@ SoundcardModem::SoundcardModem(const ModemConfig& cfg,
       // ModemConfig.signal_bw represents the FULL signal bandwidth in Hz
       // (e.g. user enters 27 kHz to span 69-96 kHz at Fc=82.5 kHz).
       // IQDownconverter expects the ONE-SIDED LPF cutoff, so divide by 2.
-      // 0 = "auto" → 80% of OFDM sample rate's Nyquist as a safe default.
+      // 0 = "auto" → the OFDM allocation's actual occupied bandwidth, so
+      // the LPF passes exactly the band the carriers live in. (The old
+      // "80% of Nyquist" auto could disagree with the allocation in both
+      // directions and clip edge carriers.)
       downconv_(cfg.sample_rate,
                 std::min(cfg.center_freq,
                          static_cast<float>(cfg.sample_rate) / 2.f - 1.f),
                 cfg.complex_loopback
                     ? cfg.center_freq * 0.5f  // safe dummy BW for complex loopback
                     : (cfg.signal_bw > 0.f
-                        ? cfg.signal_bw * 0.5f
-                        : static_cast<float>(ofdm_params.sample_rate)
-                              * 0.5f * 0.8f),
+                        ? cfg.signal_bw
+                        : static_cast<float>(
+                              ofdm_params.occupiedBandwidthHz())) * 0.5f,
                 cfg.lpf_taps),
       agc_(cfg.sample_rate, cfg.agc),
       dc_blocker_(),
@@ -202,10 +205,11 @@ SoundcardModem::SoundcardModem(const ModemConfig& cfg,
         }
 
         // Signal occupies [fc - bw/2, fc + bw/2] — both edges must be inside
-        // (0, Nyquist). 0-default for signal_bw means "use 80% of OFDM's own
-        // sample rate" as a safe fallback (the legacy auto-pick).
+        // (0, Nyquist). 0-default for signal_bw means "use the OFDM
+        // allocation's actual occupied bandwidth" so validation and the
+        // LPFs agree with where the carriers really are.
         float sig_bw = cfg.signal_bw > 0.f ? cfg.signal_bw :
-                       static_cast<float>(ofdm_params.sample_rate) * 0.5f * 0.8f;
+                       static_cast<float>(ofdm_params.occupiedBandwidthHz());
         float half_bw = sig_bw * 0.5f;
         if (cfg.center_freq - half_bw < 0.f ||
             cfg.center_freq + half_bw > nyquist) {

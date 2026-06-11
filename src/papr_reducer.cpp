@@ -105,6 +105,17 @@ void PAPRReducer::selectReservedTones(
     }
 }
 
+void PAPRReducer::useReservedTones(const std::vector<size_t>& reserved) {
+    reserved_indices_ = reserved;
+    std::sort(reserved_indices_.begin(), reserved_indices_.end());
+    reserved_indices_.erase(
+        std::unique(reserved_indices_.begin(), reserved_indices_.end()),
+        reserved_indices_.end());
+    std::fill(is_reserved_.begin(), is_reserved_.end(), false);
+    for (auto idx : reserved_indices_)
+        if (idx < is_reserved_.size()) is_reserved_[idx] = true;
+}
+
 // =========================================================================
 // PAPR computation
 // =========================================================================

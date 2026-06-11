@@ -54,6 +54,12 @@ private:
     void exportSpectrumPNG();
     void showAboutDialog();
     void showDeviceDialog();
+    /// Save/Load config via file dialog — shared by the File menu and the
+    /// Ctrl+S / Ctrl+O shortcuts so the locking + post-load refresh logic
+    /// can't drift apart again (the shortcut copies used to skip the state
+    /// lock AND the panel refreshes).
+    void saveConfigInteractive();
+    void loadConfigInteractive();
 
 public:
     /** Open the hierarchical-modulation configuration dialog. Public
@@ -94,6 +100,7 @@ private:
     QLabel* status_tick_   = nullptr;   // engine tick latency max/avg
     QLabel* status_engine_ = nullptr;   // engine running/stopped + frame counter
     QLabel* status_audio_  = nullptr;   // audio_monitor health
+    QLabel* status_modcod_ = nullptr;   // live PLS-signaled modcod (post-AMC/VCM)
 };
 
 } // namespace dsca

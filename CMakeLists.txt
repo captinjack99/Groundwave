@@ -226,6 +226,27 @@ if(BUILD_CLI)
     target_include_directories(dsca_modem PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/cli
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+    add_executable(scorecard tools/scorecard.cpp)
+    target_link_libraries(scorecard PRIVATE dsca_core)
+    target_include_directories(scorecard PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+    # exit_chart: semi-analytic EXIT-chart tool for the BICM-ID receiver —
+    # tabulates the demapper + decoder extrinsic-MI transfer curves at a chosen
+    # modcod/Es/N0 and reports whether the convergence tunnel is open.
+    add_executable(exit_chart tools/exit_chart.cpp)
+    target_link_libraries(exit_chart PRIVATE dsca_core)
+    target_include_directories(exit_chart PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+    # cfo_demo: carrier-frequency-offset before/after demonstration. Sweeps CFO
+    # and reports info-bit errors for the uncorrected (offset-discarded) path
+    # vs the corrected (Moose-derotated) default path through the full pipeline.
+    add_executable(cfo_demo tools/cfo_demo.cpp)
+    target_link_libraries(cfo_demo PRIVATE dsca_core)
+    target_include_directories(cfo_demo PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endif()
 
 # --- Tests ---
@@ -260,6 +281,33 @@ if(BUILD_TESTS)
     # Bisects the OFDM chain stage-by-stage to localize bit-loss bugs.
     add_executable(ofdm_chain_test tests/ofdm_chain_test.cpp)
     target_link_libraries(ofdm_chain_test dsca_core)
+
+    # Reed-Solomon outer-code integrity over the FULL chain (info -> RS ->
+    # LDPC -> OFDM -> demod -> LDPC -> RS) + RS capacity (<=8 byte errors
+    # corrected, 9+ flagged uncorrectable) + VCM per-slot FEC coverage. Guards
+    # the RS-capacity / per-slot-rebuild logic audio_engine.cpp mirrors. (#24)
+    add_executable(rs_chain_test tests/rs_chain_test.cpp)
+    target_link_libraries(rs_chain_test dsca_core)
+
+    # Malformed-input fuzz suite: deserializeConfig, FrameParser::parse,
+    # RingBuffer, and the WAV loader — "no crash, no UB, error/empty, never
+    # NaN/garbage". Needs cli/ on the include path for wav_io.hpp. (#25)
+    add_executable(fuzz_test tests/fuzz_test.cpp)
+    target_link_libraries(fuzz_test dsca_core)
+    target_include_directories(fuzz_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cli)
+
+    # Real-passband (IF) loopback: allocation band contract (DC-centered,
+    # guards at the physical band edges, target_bw honored) + full
+    # upconvert->AGC->downconvert round-trip with wide-scan acquisition,
+    # clean and at 20 dB AWGN. The one path complex_loopback can't see.
+    add_executable(passband_loopback_test tests/passband_loopback_test.cpp)
+    target_link_libraries(passband_loopback_test dsca_core)
+
+    # BER/FER vs Es/N0 waterfall benchmark over AWGN + a Watterson HF channel
+    # (2-tap independent Rayleigh fading, configurable Doppler). Full mode
+    # prints tables; --smoke runs a fast finite+monotonic gate for ctest. (#27)
+    add_executable(benchmark_waterfall tests/benchmark_waterfall.cpp)
+    target_link_libraries(benchmark_waterfall dsca_core)
 
     # Reed-Solomon outer-code round-trip + error-correction validation.
     add_executable(reed_solomon_test tests/reed_solomon_test.cpp)
@@ -307,12 +355,35 @@ if(BUILD_TESTS)
     add_executable(computed_params_test tests/computed_params_test.cpp)
     target_link_libraries(computed_params_test dsca_core)
 
+    # Anti-Gray (BICM-ID-friendly) constellation labeling: Gray byte-stability,
+    # raised nearest-neighbor Hamming distance, bit-exact anti-Gray round-trip,
+    # PWL==exact LLR under anti-Gray, a POSITIVE demapper-EXIT slope (vs Gray's
+    # flat curve), and a converging BICM-ID loop with the textbook iter-1
+    # penalty / converged-gain signature.
+    add_executable(labeling_test tests/labeling_test.cpp)
+    target_link_libraries(labeling_test dsca_core)
+
     enable_testing()
     foreach(T loopback_test frame_test fec_test codec_test modem_test
               gui_test dsp_primitives_test integration_test ldpc_encoder_test
-              reed_solomon_test side_reconstructor_test cp_window_test
-              hierarchical_test ldpc_protograph_test sfo_test pls_test dred_test
-              computed_params_test)
+              ofdm_chain_test reed_solomon_test side_reconstructor_test
+              cp_window_test hierarchical_test ldpc_protograph_test sfo_test
+              pls_test dred_test computed_params_test rs_chain_test fuzz_test
+              labeling_test passband_loopback_test)
         add_test(NAME ${T} COMMAND ${T})
     endforeach()
+
+    # The waterfall benchmark's default mode is a long sweep; register only its
+    # FAST --smoke variant (a few SNR points) as the ctest gate, asserting the
+    # BER/FER waterfall is finite and monotone-non-increasing. (#27)
+    add_test(NAME benchmark_waterfall_smoke
+             COMMAND benchmark_waterfall --smoke)
+
+    # exit_chart's full run sweeps two EXIT curves; register only its FAST
+    # --selftest variant as the ctest gate: J/Jinv round-trip, MI estimator in
+    # [0,1] tracking I_A, and a monotone demapper EXIT curve. The exit_chart
+    # tool target is built under BUILD_CLI, so only wire the test when it exists.
+    if(TARGET exit_chart)
+        add_test(NAME exit_chart_selftest COMMAND exit_chart --selftest)
+    endif()
 endif()

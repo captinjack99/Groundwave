@@ -102,9 +102,10 @@ See [`vcpkg-overlay/README.md`](vcpkg-overlay/README.md).
 - **GUI**: launch `dsca_ng`. Pick a preset (F2–F8), press **TX**, and the
   built-in software loopback runs the full TX→RX chain; the diagnostics
   panels show the live constellation, spectrum, eye, and sync state.
-- **CLI**: `dsca_encode` / `dsca_decode` move audio ↔ modem frames;
-  `dsca_modem` runs a loopback or file-based modem session. Run any tool
-  with `--help` for options.
+- **CLI**: `dsca_encode` / `dsca_decode` move audio ↔ modem frames as
+  files; `dsca_modem` runs a live session — software loopback (with
+  optional AWGN), TX/RX against real audio devices, or a virtual-cable
+  end-to-end loop. Run any tool with `--help` for options.
 
 ## Tests
 

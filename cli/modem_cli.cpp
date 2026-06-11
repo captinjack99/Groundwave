@@ -56,7 +56,9 @@ void usage() {
         "  -s sr              Sample rate Hz (default 48000)\n"
         "  -F fft             FFT size (default 256)\n"
         "  -m mod             bpsk|qpsk|qam16|qam64|qam256|qam1024|qam4096\n"
-        "  -f fec             1/4 1/3 1/2 3/4 5/6 9/10 (default 1/2)\n"
+        "  -f fec             1/4 1/3 2/5 1/2 3/5 2/3 3/4 4/5 5/6 8/9 9/10 (default 1/2)\n"
+        "  --bw hz            Occupied signal bandwidth (default: auto-fit to\n"
+        "                     80%% of the passband around the center freq)\n"
         "  --tone hz          TX test-tone frequency (default 1000)\n"
         "  --snr db           Add AWGN to internal loopback (default: clean)\n");
 }
@@ -144,7 +146,11 @@ int main(int argc, char** argv) {
     int  pb_dev   = -1;
     int  cap_dev  = -1;
     float tone_hz = 1000.f;
-    float awgn_snr_db = -1.f;
+    // Negative SNRs are legitimate test points (BPSK 1/4 closes below
+    // 0 dB), so "off" needs a separate flag rather than a -1 sentinel.
+    bool  awgn_enabled = false;
+    float awgn_snr_db  = 0.f;
+    float signal_bw_hz = 0.f;   // 0 = auto-fit to the passband
     bool list_only = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -153,8 +159,12 @@ int main(int argc, char** argv) {
         else if (a == "--mode" && i + 1 < argc)  mode = argv[++i];
         else if (a == "--pb"   && i + 1 < argc)  pb_dev = std::atoi(argv[++i]);
         else if (a == "--cap"  && i + 1 < argc)  cap_dev = std::atoi(argv[++i]);
+        else if (a == "--bw"   && i + 1 < argc)  signal_bw_hz = static_cast<float>(std::atof(argv[++i]));
         else if (a == "--tone" && i + 1 < argc)  tone_hz = static_cast<float>(std::atof(argv[++i]));
-        else if (a == "--snr"  && i + 1 < argc)  awgn_snr_db = static_cast<float>(std::atof(argv[++i]));
+        else if (a == "--snr"  && i + 1 < argc) {
+            awgn_snr_db  = static_cast<float>(std::atof(argv[++i]));
+            awgn_enabled = true;
+        }
         else if (a == "-d" && i + 1 < argc) duration_sec = std::atoi(argv[++i]);
         else if (a == "-c" && i + 1 < argc) center_hz = static_cast<float>(std::atof(argv[++i]));
         else if (a == "-s" && i + 1 < argc) sample_rate = static_cast<uint32_t>(std::atoi(argv[++i]));
@@ -198,14 +208,44 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Occupied bandwidth must fit inside (0, Nyquist) around the center
+    // frequency, and the OFDM allocation must be told about it
+    // (target_bw_hz) so the active subcarriers stay inside the up/down-
+    // converter LPFs. This mirrors the contract the GUI engine honors
+    // (audio_engine sets ofdm.target_bw_hz = modem.signal_bw); without it
+    // the default 5%-per-side guards span far more than the passband and
+    // the loopback LPF destroys the signal — 0% decode on a clean channel.
+    const float nyquist = static_cast<float>(sample_rate) / 2.f;
+    if (!(center_hz > 0.f && center_hz < nyquist)) {
+        std::fprintf(stderr, "Error: center freq %.0f Hz must be inside "
+                     "(0, %.0f) at this sample rate.\n",
+                     static_cast<double>(center_hz),
+                     static_cast<double>(nyquist));
+        return 1;
+    }
+    if (signal_bw_hz <= 0.f) {   // auto: 80% of the symmetric fit
+        signal_bw_hz = 2.f * 0.8f * std::min(center_hz, nyquist - center_hz);
+    }
+    if (center_hz - signal_bw_hz * 0.5f <= 0.f ||
+        center_hz + signal_bw_hz * 0.5f >= nyquist) {
+        std::fprintf(stderr, "Error: bandwidth %.0f Hz does not fit in "
+                     "(0, %.0f) around center %.0f Hz.\n",
+                     static_cast<double>(signal_bw_hz),
+                     static_cast<double>(nyquist),
+                     static_cast<double>(center_hz));
+        return 1;
+    }
+
     OFDMParams ofdm;
     ofdm.fft_size    = static_cast<uint16_t>(fft_size);
     ofdm.modulation  = mod;
     ofdm.sample_rate = sample_rate;
+    ofdm.target_bw_hz = signal_bw_hz;
 
     ModemConfig mcfg;
     mcfg.sample_rate = sample_rate;
     mcfg.center_freq = center_hz;
+    mcfg.signal_bw   = signal_bw_hz;
     mcfg.loopback    = (mode == "internal");
 
     SoundcardModem modem(mcfg, ofdm);
@@ -223,6 +263,7 @@ int main(int argc, char** argv) {
 
     OFDMModulator ofdm_mod(ofdm);
     OFDMDemodulator ofdm_demod(ofdm);
+    OFDMSynchronizer ofdm_sync(ofdm);
 
     // Hardware audio: needed for tx, rx, vcable modes
 #ifdef DSCA_ENABLE_AUDIO
@@ -265,9 +306,11 @@ int main(int argc, char** argv) {
         "  modulation: %s\n"
         "  fec       : %s\n"
         "  fft size  : %u\n"
-        "  center    : %.0f Hz @ %u Hz sample rate\n",
+        "  center    : %.0f Hz @ %u Hz sample rate\n"
+        "  bandwidth : %.0f Hz\n",
         mode.c_str(), duration_sec, modulationName(mod), fecRateName(fec),
-        fft_size, static_cast<double>(center_hz), sample_rate);
+        fft_size, static_cast<double>(center_hz), sample_rate,
+        static_cast<double>(signal_bw_hz));
 
     auto start = std::chrono::steady_clock::now();
     uint32_t frame_no = 0;
@@ -314,7 +357,7 @@ int main(int argc, char** argv) {
         }
 
         // ---- Internal-loopback: inject AWGN if requested ----
-        if (mode == "internal" && awgn_snr_db >= 0.f) {
+        if (mode == "internal" && awgn_enabled) {
             modem.processLoopbackAWGN(awgn_snr_db, frame_no);
         }
 
@@ -324,18 +367,45 @@ int main(int argc, char** argv) {
             if (!rx.empty()) {
                 rx_accum.insert(rx_accum.end(), rx.begin(), rx.end());
 
-                // Try preamble lock on first big chunk
+                // Preamble acquisition. The received stream is NOT front-
+                // aligned: the TX and RX LPFs (129 taps each by default)
+                // contribute ~2x64 samples of group delay, so the preamble
+                // sits an arbitrary-but-fixed offset into the stream. Mirror
+                // the engine's ACQUIRE path: cross-correlate against the known
+                // Zadoff-Chu long-preamble body over the whole buffer
+                // (fineSync wide scan), then back out the preamble start
+                // (body - CP - short preamble) and hand processPreamble the
+                // two long symbols at their true position.
                 if (!preamble_rx) {
-                    size_t need = 2 * ofdm.symbolLength()
-                                + 10 * (ofdm.fft_size / 4);
-                    if (rx_accum.size() >= need) {
-                        ComplexBuf longp(rx_accum.begin() +
-                            static_cast<ptrdiff_t>(10 * (ofdm.fft_size / 4)),
-                            rx_accum.begin() + static_cast<ptrdiff_t>(need));
-                        if (ofdm_demod.processPreamble(longp)) {
-                            preamble_rx = true;
-                            rx_accum.erase(rx_accum.begin(),
-                                rx_accum.begin() + static_cast<ptrdiff_t>(need));
+                    const size_t cp          = ofdm.cpLength();
+                    const size_t short_total = 10 * (ofdm.fft_size / 4);
+                    const size_t long_total  = 2 * ofdm.symbolLength();
+                    const size_t need        = short_total + long_total;
+                    // A little slack beyond the nominal length so the wide
+                    // scan window actually contains the delayed preamble.
+                    if (rx_accum.size() >= need + ofdm.symbolLength()) {
+                        SyncResult fr;
+                        int centre = static_cast<int>(rx_accum.size() / 2);
+                        if (ofdm_sync.fineSync(rx_accum, centre, fr,
+                                               rx_accum.size()) && fr.valid) {
+                            long ps = static_cast<long>(fr.timing_offset)
+                                    - static_cast<long>(cp)
+                                    - static_cast<long>(short_total);
+                            if (ps < 0) ps = 0;
+                            if (static_cast<size_t>(ps) + need > rx_accum.size())
+                                ps = static_cast<long>(rx_accum.size() - need);
+                            const size_t pre_start = static_cast<size_t>(ps);
+                            ComplexBuf longp(
+                                rx_accum.begin() + static_cast<ptrdiff_t>(
+                                    pre_start + short_total),
+                                rx_accum.begin() + static_cast<ptrdiff_t>(
+                                    pre_start + need));
+                            if (ofdm_demod.processPreamble(longp)) {
+                                preamble_rx = true;
+                                rx_accum.erase(rx_accum.begin(),
+                                    rx_accum.begin() + static_cast<ptrdiff_t>(
+                                        pre_start + need));
+                            }
                         }
                     }
                 }

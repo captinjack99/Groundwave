@@ -5,11 +5,15 @@
  * KEY DESIGN DECISIONS (fixing v1 bugs):
  *
  * 1. FREQUENCY-DOMAIN PREAMBLE:
- *    The preamble is defined as known BPSK symbols in the frequency domain.
+ *    The preamble is defined as known symbols in the frequency domain — a
+ *    constant-amplitude Zadoff-Chu (CAZAC) sequence on the long preamble's
+ *    active subcarriers (BPSK on the short preamble).
  *    TX: IFFT → add CP → transmit.
  *    RX: remove CP → FFT → divide by known freq symbols → channel estimate.
  *    This avoids the v1 bug where time-domain preamble was divided against
- *    frequency-domain FFT output.
+ *    frequency-domain FFT output. ZC's |X[k]|=1 keeps the Y/X channel-estimate
+ *    divides well-conditioned and gives the time-domain long preamble a sharp
+ *    autocorrelation peak for fine timing acquisition.
  *
  * 2. SINGLE ALLOCATION FUNCTION:
  *    computeAllocation() is the sole source of truth for which FFT bins
@@ -22,10 +26,12 @@
 
 #include "ofdm.hpp"
 #include "papr_reducer.hpp"
+#include "zadoff_chu.hpp"
 #include <cmath>
 #include <algorithm>
 #include <numeric>
 #include <stdexcept>
+#include <utility>
 
 namespace dsca {
 
@@ -36,7 +42,8 @@ namespace dsca {
 namespace {
 
 constexpr uint32_t PILOT_SEED    = 0xABCDEF01u;
-constexpr uint32_t PREAMBLE_SEED = 0x12345678u;
+// PREAMBLE_SEED retired: the long preamble's active-bin values are now a
+// Zadoff-Chu (CAZAC) sequence (see generatePreambleFreqDomain), not LCG-BPSK.
 constexpr uint32_t SHORT_SEED    = 0x87654321u;
 
 // LCG: same as glibc
@@ -63,23 +70,90 @@ SubcarrierAllocation computeAllocation(const OFDMParams& p) {
 
     const size_t start = a.guard_left;
     const size_t end   = N - a.guard_right; // exclusive
-    const size_t dc_bin = 0;
+
+    // The logical carrier index l walks the OCCUPIED BAND edge-to-edge in
+    // ascending frequency, with DC at l = N/2. Its physical IFFT bin is
+    //     phys = (l + N/2) mod N
+    // (FFT natural order: DC = bin 0, +f in [1, N/2), -f in (N/2, N)).
+    // Guards at the logical edges [0,start) and [end,N) therefore sit at
+    // the PHYSICAL band edges (around ±Nyquist) — which is what the
+    // guard / target_bw_hz math in OFDMParams promises, and what the
+    // analog passband model (TX/RX LPF cutoffs at signal_bw/2, real-IF
+    // up/downconversion at a center frequency) requires.
+    //
+    // Previously l was used as the physical bin DIRECTLY, which inverted
+    // the layout: the guard hole sat uselessly around DC and the active
+    // carriers ran out to ±Nyquist, so every passband path (HW audio,
+    // vcable, the CLI's internal real-IF loopback) clipped most of the
+    // signal in the LPFs and nothing decoded. The complex-baseband
+    // loopback is bin-exact regardless of layout, which is why the GUI
+    // and the test suite never noticed. This mapping also makes dc_null
+    // real: bin 0 (the downconverter's DC/carrier-leak bin) now actually
+    // carries no data or pilot.
+    auto physBin = [N](size_t logical) { return (logical + N / 2) % N; };
 
     float pilot_amp = std::pow(10.0f, p.pilot_boost_db / 20.0f);
     uint32_t seed = PILOT_SEED;
     size_t carrier_count = 0;
 
+    // Pilot values are tied to their bins; build (bin, value) pairs in
+    // logical order (so the LCG sequence stays deterministic), then sort
+    // by physical bin so downstream consumers that assume ascending
+    // indices (pilot interpolation, PAPR carve "sorted ascending"
+    // invariant) keep working.
+    std::vector<std::pair<size_t, ComplexSample>> pilots;
     for (size_t i = start; i < end; ++i) {
-        if (p.dc_null && i == dc_bin) continue;
+        const size_t phys = physBin(i);
+        if (p.dc_null && phys == 0) continue;
 
         if (carrier_count % p.pilot_spacing == 0) {
-            a.pilot_indices.push_back(i);
             seed = lcg(seed);
-            a.pilot_values.push_back(bpsk_from_seed(seed, pilot_amp));
+            pilots.emplace_back(phys, bpsk_from_seed(seed, pilot_amp));
         } else {
-            a.data_indices.push_back(i);
+            a.data_indices.push_back(phys);
         }
         ++carrier_count;
+    }
+    std::sort(pilots.begin(), pilots.end(),
+              [](const std::pair<size_t, ComplexSample>& x,
+                 const std::pair<size_t, ComplexSample>& y) {
+                  return x.first < y.first;
+              });
+    std::sort(a.data_indices.begin(), a.data_indices.end());
+    a.pilot_indices.reserve(pilots.size());
+    a.pilot_values.reserve(pilots.size());
+    for (const auto& pv : pilots) {
+        a.pilot_indices.push_back(pv.first);
+        a.pilot_values.push_back(pv.second);
+    }
+
+    // PAPR tone reservation: carve uniformly-spaced DATA carriers out of the
+    // data allocation into dedicated reserved (peak-reduction) tones. Done HERE
+    // -- the single source of truth -- so TX and RX agree and neither maps nor
+    // demaps data on reserved bins. Off (no carve) when papr_reserve_fraction
+    // is 0, so the default allocation is byte-identical to before.
+    if (p.papr_reserve_fraction > 0.f && a.data_indices.size() >= 2) {
+        size_t total_active = a.data_indices.size() + a.pilot_indices.size();
+        size_t n_reserve = static_cast<size_t>(std::ceil(
+            p.papr_reserve_fraction * static_cast<float>(total_active)));
+        n_reserve = std::min(n_reserve, a.data_indices.size() / 2);
+        if (n_reserve == 0) n_reserve = 1;
+
+        std::vector<bool> is_res(a.data_indices.size(), false);
+        float step = static_cast<float>(a.data_indices.size()) /
+                     static_cast<float>(n_reserve);
+        for (size_t i = 0; i < n_reserve; ++i) {
+            size_t di = static_cast<size_t>(static_cast<float>(i) * step + 0.5f);
+            if (di >= a.data_indices.size()) di = a.data_indices.size() - 1;
+            is_res[di] = true;
+        }
+        std::vector<size_t> keep;
+        keep.reserve(a.data_indices.size());
+        for (size_t di = 0; di < a.data_indices.size(); ++di) {
+            if (is_res[di]) a.reserved_indices.push_back(a.data_indices[di]);
+            else            keep.push_back(a.data_indices[di]);
+        }
+        a.data_indices.swap(keep);   // reserved/data both remain sorted ascending
     }
 
     return a;
@@ -90,18 +164,43 @@ SubcarrierAllocation computeAllocation(const OFDMParams& p) {
 // =========================================================================
 
 ComplexBuf generatePreambleFreqDomain(const OFDMParams& p) {
-    // Known BPSK symbols on ALL active subcarriers (data + pilot positions)
+    // Known CAZAC (Zadoff-Chu) symbols on ALL active subcarriers (data + pilot
+    // positions). ZC is constant-amplitude (|X[k]|=1) so channel estimation
+    // (Y/X divides) and the long-preamble CFO estimator stay valid, while its
+    // near-ideal periodic autocorrelation gives the time-domain long preamble a
+    // sharp correlation peak for honest fineSync acquisition. TX generation and
+    // RX reference both come from THIS function, so they stay bit-identical.
     ComplexBuf freq(p.fft_size, ComplexSample(0.f, 0.f));
 
+    const size_t N     = p.fft_size;
     const size_t start = p.guardLeft();
-    const size_t end   = p.fft_size - p.guardRight();
+    const size_t end   = N - p.guardRight();
 
-    uint32_t seed = PREAMBLE_SEED;
+    // Same logical→physical bin mapping as computeAllocation (band centered
+    // on DC, guards at the physical band edges) so the preamble occupies
+    // EXACTLY the band the data does and survives the same LPFs.
+    auto physBin = [N](size_t logical) { return (logical + N / 2) % N; };
+
+    // Count active bins (DC nulled when requested) so the ZC length matches
+    // the number of bins we actually populate.
+    size_t n_active = 0;
     for (size_t i = start; i < end; ++i) {
-        if (p.dc_null && i == 0) continue;
-        seed = lcg(seed);
-        float sign = (seed & 0x80000000u) ? 1.0f : -1.0f;
-        freq[i] = ComplexSample(sign, 0.0f);
+        if (p.dc_null && physBin(i) == 0) continue;
+        ++n_active;
+    }
+    if (n_active == 0) return freq;
+
+    // One length-n_active ZC sequence, optimal root (coprime to length, near
+    // n_active/2 → best off-peak autocorrelation suppression). Mapped in
+    // ascending-frequency (logical) order onto the active bins, so the ZC
+    // phase ramp stays contiguous along the occupied band.
+    const ComplexBuf zc = zadoffChu(n_active, zadoffChuOptimalRoot(n_active));
+
+    size_t k = 0;
+    for (size_t i = start; i < end; ++i) {
+        const size_t phys = physBin(i);
+        if (p.dc_null && phys == 0) continue;
+        freq[phys] = zc[k++];
     }
 
     return freq;
@@ -122,11 +221,15 @@ ComplexBuf generatePreambleTimeDomain(const OFDMParams& p,
         const size_t start = p.guardLeft();
         const size_t end   = N - p.guardRight();
         uint32_t seed = SHORT_SEED;
+        // Same logical→physical mapping as computeAllocation: the comb
+        // lives inside the occupied band (centered on DC), not out to
+        // ±Nyquist, so AGC/detection sees the band the data will use.
         for (size_t i = start; i < end; i += 4) {
-            if (p.dc_null && i == 0) continue;
+            const size_t phys = (i + N / 2) % N;
+            if (p.dc_null && phys == 0) continue;
             seed = lcg(seed);
             float sign = (seed & 0x80000000u) ? 1.0f : -1.0f;
-            short_freq[i] = ComplexSample(sign * 1.5f, 0.0f);
+            short_freq[phys] = ComplexSample(sign * 1.5f, 0.0f);
         }
 
         // IFFT to time domain
@@ -309,6 +412,8 @@ OFDMDemodulator::OFDMDemodulator(const OFDMParams& params)
     fft_out_.resize(p_.fft_size);
     ch_est_.resize(p_.fft_size, ComplexSample(1.f, 0.f));
     ch_mag_.resize(p_.fft_size, 1.f);
+    dd_persist_.resize(p_.fft_size, ComplexSample(1.f, 0.f));
+    dd_conf_.resize(p_.fft_size, 0.f);
 }
 
 OFDMDemodulator::~OFDMDemodulator() = default;
@@ -320,13 +425,50 @@ bool OFDMDemodulator::processPreamble(const ComplexBuf& long_sym_samples) {
 
     if (long_sym_samples.size() < 2 * sym_len) return false;
 
+    // ---- Fractional CFO estimate (Moose) ----------------------------------
+    // The two long preamble symbols are identical and sym_len samples apart.
+    // With a carrier offset f, corresponding samples differ only by the
+    // rotation e^{j·2π·f·sym_len/fs}, so the phase of their cross-correlation
+    // IS the offset. Unambiguous over |f| < fs/(2·sym_len) (~83 Hz at
+    // 48 kHz / N=256). This is the offset the engine previously discarded.
+    {
+        ComplexSample corr(0.f, 0.f);
+        for (size_t i = 0; i < N; ++i) {
+            corr += std::conj(long_sym_samples[cp + i]) *
+                    long_sym_samples[sym_len + cp + i];
+        }
+        // arg(corr) = f·sym_len (rad) → per-sample offset = arg / sym_len.
+        cfo_rad_per_sample_ = (std::norm(corr) > 0.f)
+            ? std::arg(corr) / static_cast<float>(sym_len) : 0.f;
+
+        // Dead-zone: below ~1% of the subcarrier spacing the estimate is
+        // dominated by noise (a few tenths of a Hz at typical SNR), and the
+        // per-symbol pilot tracker already absorbs that much. "Correcting" it
+        // would only inject jitter, so snap it to zero — which also keeps a
+        // genuinely CFO-free stream byte-for-byte unchanged.
+        const float eps_norm = std::fabs(cfo_rad_per_sample_) *
+                               static_cast<float>(N) / 6.283185307179586f;
+        if (eps_norm < 0.008f) cfo_rad_per_sample_ = 0.f;
+    }
+
+    // Derotation referenced to long_sym_samples[0]. The payload stream
+    // continues the SAME NCO from sample index 2·sym_len (rx_sample_pos_,
+    // set below), so the channel estimate and the data live in one CFO-free
+    // frame and the pilot IIR no longer chases a spinning phase.
+    auto derot = [&](size_t k) -> ComplexSample {
+        if (cfo_rad_per_sample_ == 0.f) return ComplexSample(1.f, 0.f);
+        double ph = std::fmod(-static_cast<double>(cfo_rad_per_sample_) *
+                              static_cast<double>(k), 2.0 * M_PI);
+        return ComplexSample(static_cast<float>(std::cos(ph)),
+                             static_cast<float>(std::sin(ph)));
+    };
+
     // Process two long preamble symbols for averaged channel estimate
     ComplexBuf h1(N), h2(N);
 
-    // First long symbol: strip CP, FFT, divide by known freq reference
-    std::copy(long_sym_samples.begin() + static_cast<ptrdiff_t>(cp),
-              long_sym_samples.begin() + static_cast<ptrdiff_t>(cp + N),
-              fft_in_.begin());
+    // First long symbol: strip CP + derotate, FFT, divide by known freq ref
+    for (size_t i = 0; i < N; ++i)
+        fft_in_[i] = long_sym_samples[cp + i] * derot(cp + i);
 
     // Integer CFO estimation BEFORE FFT-based channel estimate.
     // We measure on the pre-FFT time-domain symbol; if a bin shift is
@@ -345,10 +487,9 @@ bool OFDMDemodulator::processPreamble(const ComplexBuf& long_sym_samples) {
         }
     }
 
-    // Second long symbol
-    std::copy(long_sym_samples.begin() + static_cast<ptrdiff_t>(sym_len + cp),
-              long_sym_samples.begin() + static_cast<ptrdiff_t>(sym_len + cp + N),
-              fft_in_.begin());
+    // Second long symbol: strip CP + derotate (continuing the same NCO)
+    for (size_t i = 0; i < N; ++i)
+        fft_in_[i] = long_sym_samples[sym_len + cp + i] * derot(sym_len + cp + i);
     fft_->forward(fft_in_, fft_out_);
 
     for (size_t i = 0; i < N; ++i) {
@@ -368,9 +509,39 @@ bool OFDMDemodulator::processPreamble(const ComplexBuf& long_sym_samples) {
         noise_power += std::norm(h1[i] - h2[i]) * 0.5f;
     }
 
+    // When CFO correction is active, referencing the derotation at the long-
+    // preamble start leaves a CONSTANT phase offset on the equalized data (the
+    // carrier phase accumulated before the long preamble). It cancels in
+    // equalization, but the per-symbol pilot IIR starts from (1,0) and would
+    // take several symbols to converge to it — corrupting the first data
+    // symbols of high-order QAM (the error count tracks that residual phase).
+    // Seed the IIR from the preamble estimate so the constant is absorbed from
+    // symbol 0. No-op when CFO is inactive, so CFO-free streams are untouched.
+    if (cfo_rad_per_sample_ != 0.f) {
+        if (pilot_ls_prev_.size() != alloc_.pilotCount())
+            pilot_ls_prev_.assign(alloc_.pilotCount(), ComplexSample(1.f, 0.f));
+        for (size_t i = 0; i < alloc_.pilotCount(); ++i)
+            pilot_ls_prev_[i] = ch_est_[alloc_.pilot_indices[i]];
+    }
+
     if (noise_power > 0.f) {
         snr_db_ = 10.f * std::log10(sig_power / noise_power);
         noise_var_ = noise_power / static_cast<float>(N);
+    }
+
+    // Seed the persistent decision-directed accumulator from the (clean,
+    // CFO-corrected) preamble channel estimate so it starts coherent and in the
+    // same frame as the data that follows. Confidence resets to 0 so the first
+    // data symbols lean on the pilot estimate until the DD accumulator has seen
+    // enough consistent decisions to be trusted. Inert unless persistent_dd_.
+    if (persistent_dd_) {
+        if (dd_persist_.size() != N) dd_persist_.assign(N, ComplexSample(1.f, 0.f));
+        if (dd_conf_.size()    != N) dd_conf_.assign(N, 0.f);
+        for (size_t i = 0; i < N; ++i) {
+            dd_persist_[i] = ch_est_[i];
+            dd_conf_[i]    = 0.f;
+        }
+        dd_seeded_ = true;
     }
 
     // Initialize MMSE estimator from preamble if enabled
@@ -378,21 +549,54 @@ bool OFDMDemodulator::processPreamble(const ComplexBuf& long_sym_samples) {
         mmse_->initFromPreamble(h1, h2);
     }
 
+    // The payload that follows starts right after the two long symbols. Keep
+    // the derotation NCO continuous so the first data symbol picks up exactly
+    // where the preamble left off.
+    rx_sample_pos_ = 2 * sym_len;
+
     return true;
+}
+
+void OFDMDemodulator::stripAndDerotate(const ComplexBuf& samples) {
+    const size_t sym_len = p_.symbolLength();
+    const size_t cp      = p_.cpLength();
+    const size_t N       = p_.fft_size;
+
+    if (cfo_rad_per_sample_ == 0.f) {
+        // No CFO estimated → plain CP strip, byte-for-byte identical to before.
+        std::copy(samples.begin() + static_cast<ptrdiff_t>(cp),
+                  samples.begin() + static_cast<ptrdiff_t>(cp + N),
+                  fft_in_.begin());
+        rx_sample_pos_ += sym_len;
+        return;
+    }
+
+    // Derotate each kept sample by e^{-j·cfo·k}, where k is the ABSOLUTE sample
+    // index since the preamble. Using the absolute index (rather than a
+    // per-sample accumulator) keeps the payload phase-locked to the preamble's
+    // channel estimate and immune to drift over long streams; fmod keeps the
+    // cos/sin argument small for float accuracy.
+    const double cfo = static_cast<double>(cfo_rad_per_sample_);
+    for (size_t n = 0; n < N; ++n) {
+        double k  = static_cast<double>(rx_sample_pos_ + cp + n);
+        double ph = std::fmod(-cfo * k, 2.0 * M_PI);
+        fft_in_[n] = samples[cp + n] *
+            ComplexSample(static_cast<float>(std::cos(ph)),
+                          static_cast<float>(std::sin(ph)));
+    }
+    rx_sample_pos_ += sym_len;
 }
 
 bool OFDMDemodulator::demodulate(const ComplexBuf& samples,
                                   ComplexBuf& data_symbols) {
     const size_t sym_len = p_.symbolLength();
-    const size_t cp      = p_.cpLength();
     const size_t N       = p_.fft_size;
 
     if (samples.size() < sym_len) return false;
 
-    // Strip CP
-    std::copy(samples.begin() + static_cast<ptrdiff_t>(cp),
-              samples.begin() + static_cast<ptrdiff_t>(cp + N),
-              fft_in_.begin());
+    // Strip CP + apply fractional-CFO derotation (a plain CP strip when no
+    // CFO has been estimated, so a CFO-free stream is unchanged).
+    stripAndDerotate(samples);
 
     // FFT
     fft_->forward(fft_in_, fft_out_);
@@ -516,19 +720,47 @@ float OFDMDemodulator::trackedPhaseRad() const {
     return phase_tracker_ ? phase_tracker_->phaseRad() : 0.f;
 }
 
+void OFDMDemodulator::buildDataBinNoise(float noise_variance, size_t n,
+                                        std::vector<float>& nv) const {
+    nv.resize(n);
+    if (!per_bin_llr_) {                 // legacy: one scalar for all bins
+        std::fill(nv.begin(), nv.end(), noise_variance);
+        return;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        size_t idx = (i < alloc_.data_indices.size()) ? alloc_.data_indices[i] : 0;
+        float h2 = (idx < ch_mag_.size()) ? ch_mag_[idx] * ch_mag_[idx] : 1.f;
+        // Floor |H|^2 so a deep fade doesn't blow the noise to infinity (the
+        // resulting LLRs would be ~0, which is the intended "no information"
+        // outcome, but we keep it finite and bounded).
+        if (h2 < 1e-3f) h2 = 1e-3f;
+        nv[i] = noise_variance / h2;
+    }
+}
+
 bool OFDMDemodulator::demodulateSoft(const ComplexBuf& samples,
                                       std::vector<float>& llrs,
-                                      float noise_variance) {
+                                      float noise_variance, bool use_pwl,
+                                      ComplexBuf* eq_out) {
     ComplexBuf data_syms;
     if (!demodulate(samples, data_syms)) return false;
-    mapper_->demapSoft(data_syms, noise_variance, llrs);
+    if (eq_out) *eq_out = data_syms;
+    // Per-subcarrier noise weighting: ZF enhances noise on faded bins by
+    // 1/|H(k)|^2, so hand the demapper the true per-bin noise instead of one
+    // scalar. This is the largest coding-gain win on any frequency-selective
+    // channel; on a flat channel it reduces to the scalar case.
+    std::vector<float> nv;
+    buildDataBinNoise(noise_variance, data_syms.size(), nv);
+    if (use_pwl) mapper_->demapSoftPWL(data_syms, nv, llrs);
+    else         mapper_->demapSoft   (data_syms, nv, llrs);
     return true;
 }
 
 bool OFDMDemodulator::demodulateSoftDD(const ComplexBuf& samples,
                                         std::vector<float>& llrs,
                                         float noise_variance,
-                                        bool use_pwl) {
+                                        bool use_pwl,
+                                        ComplexBuf* eq_out) {
     ComplexBuf data_syms;
     if (!demodulate(samples, data_syms)) return false;
 
@@ -539,9 +771,13 @@ bool OFDMDemodulator::demodulateSoftDD(const ComplexBuf& samples,
     // refinement.
     const auto& const_pts = mapper_->constellation();
     if (const_pts.empty()) {
-        // BPSK with empty constellation array — fall back to plain LLR.
-        if (use_pwl) mapper_->demapSoftPWL(data_syms, noise_variance, llrs);
-        else         mapper_->demapSoft   (data_syms, noise_variance, llrs);
+        // BPSK with empty constellation array — fall back to plain LLR
+        // (still per-bin weighted).
+        if (eq_out) *eq_out = data_syms;
+        std::vector<float> nv;
+        buildDataBinNoise(noise_variance, data_syms.size(), nv);
+        if (use_pwl) mapper_->demapSoftPWL(data_syms, nv, llrs);
+        else         mapper_->demapSoft   (data_syms, nv, llrs);
         return true;
     }
 
@@ -568,19 +804,93 @@ bool OFDMDemodulator::demodulateSoftDD(const ComplexBuf& samples,
     if (phase_tracker_)
         derot = std::polar(1.f, -phase_tracker_->phaseRad());
 
-    // Refine ch_est_ at each data subcarrier by exponentially blending
-    // the LS estimate Y/X̂ (in the φ-corrected frame) with the pilot estimate.
-    // The blend weight scales with confidence — at conf=1 we accept
-    // 30 % of the new LS measurement; at conf→0 we leave the pilot
-    // estimate unchanged.
-    constexpr float MAX_BLEND = 0.30f;
-    for (size_t i = 0; i < Nd; ++i) {
-        size_t bin = alloc_.data_indices[i];
-        if (std::abs(refs[i]) < 1e-6f) continue;
-        ComplexSample h_ls = (fft_out_[bin] * derot) / refs[i];
-        float w = MAX_BLEND * conf[i];
-        ch_est_[bin] = (1.f - w) * ch_est_[bin] + w * h_ls;
-        ch_mag_[bin] = std::abs(ch_est_[bin]);
+    if (persistent_dd_) {
+        // -------------------------------------------------------------------
+        // PERSISTENT (cross-symbol) decision-directed tracking. (#29)
+        //
+        // DESIGN — track the RESIDUAL, leash it to the pilots.
+        //   The per-symbol pilot estimate h_pilot (ch_est_, fresh every symbol)
+        //   already follows the channel's gross / common motion at the pilot
+        //   bins; what it does NOT capture is the frequency-selective structure
+        //   BETWEEN pilots, which linear interpolation reconstructs imperfectly
+        //   on a multipath channel. The decision-directed LS estimate h_ls at a
+        //   DATA bin measures the TRUE channel there (modulo decision/noise
+        //   error). So we accumulate the RESIDUAL  r = h_ls - h_pilot  with a
+        //   slow per-bin IIR (dd_persist_ stores h_pilot + r, i.e. the absolute
+        //   corrected estimate, but the IIR target is recomputed from the LIVE
+        //   pilot each symbol). Averaging r across many symbols drives down its
+        //   noise variance — the win intra-symbol DD (which blends 30 % of ONE
+        //   noisy h_ls and throws it away) cannot get.
+        //
+        //   Tracking the residual rather than the absolute channel decouples the
+        //   accumulator from the pilots' common-phase/gross motion: if the whole
+        //   channel rotates, h_pilot rotates with it and r stays small, so the
+        //   accumulator does NOT lag a moving channel (the failure mode of a
+        //   naive absolute accumulator). A LEASH caps |corrected - h_pilot| to a
+        //   fraction of |h_pilot|, so error propagation / confident-but-wrong
+        //   runs can never pull a bin far from the live pilot estimate — the
+        //   correction is bounded and self-healing.
+        //
+        //   trust (dd_conf_) is a slow low-pass of per-symbol confidence: the
+        //   correction is applied in proportion to how consistently confident
+        //   that bin's decisions have been. On a clean/static channel r → ~0 so
+        //   the whole thing is a near-no-op; pilots keep a floor of influence.
+        if (dd_persist_.size() != ch_est_.size() || !dd_seeded_) {
+            dd_persist_ = ch_est_;          // lazy seed (no preamble yet)
+            if (dd_conf_.size() != ch_est_.size())
+                dd_conf_.assign(ch_est_.size(), 0.f);
+            else
+                std::fill(dd_conf_.begin(), dd_conf_.end(), 0.f);
+            dd_seeded_ = true;
+        }
+        constexpr float RES_LP     = 0.12f; // residual IIR rate (per confident sym)
+        constexpr float CONF_LP    = 0.08f; // confidence low-pass rate
+        constexpr float TRUST_MAX  = 0.85f; // cap so pilots keep a floor
+        constexpr float LEASH      = 0.50f; // max |corrected - pilot| / |pilot|
+        for (size_t i = 0; i < Nd; ++i) {
+            size_t bin = alloc_.data_indices[i];
+            ComplexSample h_pilot = ch_est_[bin];   // LIVE per-symbol pilot estimate
+            // Current accumulated residual relative to the live pilot.
+            ComplexSample res = dd_persist_[bin] - h_pilot;
+            if (std::abs(refs[i]) >= 1e-6f) {
+                ComplexSample h_ls   = (fft_out_[bin] * derot) / refs[i];
+                ComplexSample res_ls = h_ls - h_pilot;       // measured residual
+                float step = RES_LP * conf[i];
+                res = (1.f - step) * res + step * res_ls;     // average it down
+                dd_conf_[bin] = (1.f - CONF_LP) * dd_conf_[bin] + CONF_LP * conf[i];
+            }
+            // Leash: never let the correction stray more than LEASH·|h_pilot|
+            // from the live pilot estimate (bounds error propagation).
+            float pil_mag = std::abs(h_pilot);
+            float max_dev = LEASH * (pil_mag > 1e-6f ? pil_mag : 1e-6f);
+            float res_mag = std::abs(res);
+            if (res_mag > max_dev && res_mag > 1e-12f)
+                res *= (max_dev / res_mag);
+            dd_persist_[bin] = h_pilot + res;   // store absolute corrected estimate
+
+            float trust = dd_conf_[bin];
+            if (trust > TRUST_MAX) trust = TRUST_MAX;
+            if (trust < 0.f)       trust = 0.f;
+            // Apply the trusted fraction of the (leashed, averaged) residual.
+            ComplexSample h_use = h_pilot + trust * res;
+            ch_est_[bin] = h_use;
+            ch_mag_[bin] = std::abs(h_use);
+        }
+    } else {
+        // Refine ch_est_ at each data subcarrier by exponentially blending
+        // the LS estimate Y/X̂ (in the φ-corrected frame) with the pilot estimate.
+        // The blend weight scales with confidence — at conf=1 we accept
+        // 30 % of the new LS measurement; at conf→0 we leave the pilot
+        // estimate unchanged. INTRA-symbol only (discarded next symbol).
+        constexpr float MAX_BLEND = 0.30f;
+        for (size_t i = 0; i < Nd; ++i) {
+            size_t bin = alloc_.data_indices[i];
+            if (std::abs(refs[i]) < 1e-6f) continue;
+            ComplexSample h_ls = (fft_out_[bin] * derot) / refs[i];
+            float w = MAX_BLEND * conf[i];
+            ch_est_[bin] = (1.f - w) * ch_est_[bin] + w * h_ls;
+            ch_mag_[bin] = std::abs(ch_est_[bin]);
+        }
     }
 
     // Re-equalize the data subcarriers with the refined channel, in the same
@@ -596,8 +906,12 @@ bool OFDMDemodulator::demodulateSoftDD(const ComplexBuf& samples,
         }
     }
 
-    if (use_pwl) mapper_->demapSoftPWL(refined, noise_variance, llrs);
-    else         mapper_->demapSoft   (refined, noise_variance, llrs);
+    // Per-bin weighting uses the REFINED |H| (ch_mag_ was updated above).
+    if (eq_out) *eq_out = refined;
+    std::vector<float> nv;
+    buildDataBinNoise(noise_variance, refined.size(), nv);
+    if (use_pwl) mapper_->demapSoftPWL(refined, nv, llrs);
+    else         mapper_->demapSoft   (refined, nv, llrs);
     return true;
 }
 
@@ -701,12 +1015,17 @@ void OFDMDemodulator::reset() {
     std::fill(ch_est_.begin(), ch_est_.end(), ComplexSample(1.f, 0.f));
     std::fill(ch_mag_.begin(), ch_mag_.end(), 1.f);
     std::fill(pilot_ls_prev_.begin(), pilot_ls_prev_.end(), ComplexSample(1.f, 0.f));
+    std::fill(dd_persist_.begin(), dd_persist_.end(), ComplexSample(1.f, 0.f));
+    std::fill(dd_conf_.begin(), dd_conf_.end(), 0.f);
+    dd_seeded_ = false;
     snr_db_ = 0.f;
     noise_var_ = 0.1f;
     if (mmse_) mmse_->reset();
     if (phase_tracker_) phase_tracker_->reset();
     if (sro_)           sro_->reset();
     last_int_cfo_ = 0;
+    cfo_rad_per_sample_ = 0.f;
+    rx_sample_pos_      = 0;
 }
 
 // =========================================================================
@@ -776,13 +1095,22 @@ bool OFDMSynchronizer::coarseSync(const ComplexBuf& samples, SyncResult& result)
 }
 
 bool OFDMSynchronizer::fineSync(const ComplexBuf& samples, int coarse_offset,
-                                 SyncResult& result) {
+                                 SyncResult& result, size_t search_range) {
     result = SyncResult{};
 
     size_t N = p_.fft_size;
-    size_t range = N / 8;
+    // search_range == 0 → default narrow refine window (±N/8): pulls a coarse,
+    // CP-boundary-aligned offset onto the exact sample. A caller that has not
+    // yet localized the preamble to within a symbol passes a wider range to
+    // ACQUIRE (scan) for the long-symbol body. ZC's sharp autocorrelation keeps
+    // the peak unambiguous even over a wide scan.
+    size_t range = (search_range > 0) ? search_range : (N / 8);
 
     if (long_preamble_td_.empty() || long_preamble_td_.size() != N) return false;
+    // Guard: with fewer samples than one body the search space is empty —
+    // and `samples.size() - N` below would underflow into a huge scan that
+    // reads out of bounds.
+    if (samples.size() < N) return false;
 
     float preamble_energy = 0.f;
     for (auto& s : long_preamble_td_) preamble_energy += std::norm(s);
@@ -791,9 +1119,12 @@ bool OFDMSynchronizer::fineSync(const ComplexBuf& samples, int coarse_offset,
     int best_off = coarse_offset;
 
     size_t lo = static_cast<size_t>(std::max(0, coarse_offset - static_cast<int>(range)));
-    size_t hi = std::min(samples.size() - N,
+    // +1: the window STARTING at size-N is valid; `d < hi` must include it.
+    size_t hi = std::min(samples.size() - N + 1,
                          static_cast<size_t>(coarse_offset + range));
+    if (hi <= lo) return false;
 
+    std::vector<float> metric(hi - lo, 0.f);
     for (size_t d = lo; d < hi; ++d) {
         ComplexSample c(0.f, 0.f);
         float local_e = 0.f;
@@ -803,10 +1134,29 @@ bool OFDMSynchronizer::fineSync(const ComplexBuf& samples, int coarse_offset,
         }
         float norm_f = std::sqrt(local_e * preamble_energy);
         float normalized = (norm_f > 1e-6f) ? std::abs(c) / norm_f : 0.f;
+        metric[d - lo] = normalized;
 
         if (normalized > best_corr) {
             best_corr = normalized;
             best_off = static_cast<int>(d);
+        }
+    }
+
+    // Earliest-peak tie-break. The long preamble is TWO identical ZC
+    // symbols, so the cross-correlation has two equal peaks sym_len apart;
+    // float rounding (or channel tilt) can hand the global max to the
+    // SECOND body. Anchoring there mis-positions the channel estimate one
+    // symbol late — its "second symbol" is payload/silence (h2 garbage,
+    // SNR estimate pinned near -3 dB) and every payload slice shifts.
+    // Take the earliest candidate within 5% of the maximum instead.
+    if (best_corr > 0.f) {
+        const float accept = 0.95f * best_corr;
+        for (size_t k = 0; k < metric.size(); ++k) {
+            if (metric[k] >= accept) {
+                best_off  = static_cast<int>(lo + k);
+                best_corr = metric[k];
+                break;
+            }
         }
     }
 
