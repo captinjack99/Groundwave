@@ -1,13 +1,13 @@
 /**
- * @file dsca_decode.cpp
- * @brief CLI: DSCA passband float file → WAV audio.
+ * @file gw_decode.cpp
+ * @brief CLI: Groundwave baseband float file → WAV audio.
  *
- * Inverse of dsca_encode. Reads passband floats, downconverts to baseband,
+ * Inverse of gw_encode. Reads passband floats, downconverts to baseband,
  * runs OFDM demodulation, soft demap, deinterleave, LDPC decode, frame
  * parse, Opus decode, and writes WAV.
  *
  * Usage:
- *   dsca_decode -i input.raw -o output.wav [options]
+ *   gw_decode -i input.raw -o output.wav [options]
  */
 #include "wav_io.hpp"
 #include "types.hpp"
@@ -24,13 +24,13 @@
 #include <string>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
 void usage() {
     std::fprintf(stderr,
-        "dsca_decode -i in.raw -o out.wav [-m mod] [-f rate] [-F fft] [-s sr] [-c freq]\n"
+        "gw_decode -i in.raw -o out.wav [-m mod] [-f rate] [-F fft] [-s sr] [-c freq]\n"
         "Note: parameters must match those used at encode time.\n");
 }
 
@@ -47,7 +47,7 @@ Modulation parseMod(const std::string& s, bool& ok) {
     return Modulation::QPSK;
 }
 
-// MUST match dsca_encode's parseFec exactly — the previous decoder table
+// MUST match gw_encode's parseFec exactly — the previous decoder table
 // listed only 5 of the 11 rates and silently fell back to 1/2, so a stream
 // encoded at e.g. 2/3 decoded at the wrong rate and every frame failed CRC
 // with no warning.
@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
     // zero-padded tail into the demodulator.
     passband.resize(got);
 
-    // IQ downconvert. Mirror dsca_encode's bandwidth derivation so the
+    // IQ downconvert. Mirror gw_encode's bandwidth derivation so the
     // OFDM allocation (target_bw_hz) and the LPF agree on both ends.
     const float signal_bw = 2.f * 0.8f * std::min(center_hz, nyquist - center_hz);
     constexpr size_t DN_TAPS = 65;

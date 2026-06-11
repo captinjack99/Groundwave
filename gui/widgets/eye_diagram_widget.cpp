@@ -7,7 +7,7 @@
 #include <cmath>
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 EyeDiagramWidget::EyeDiagramWidget(QWidget* parent)
     : QWidget(parent)
@@ -124,4 +124,4 @@ void EyeDiagramWidget::paintEvent(QPaintEvent*) {
                    .arg(static_cast<int>(snap.size())).arg(sps));
 }
 
-} // namespace dsca
+} // namespace gw

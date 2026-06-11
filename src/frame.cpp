@@ -10,7 +10,7 @@
 #include <cstring>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // FrameBuilder
@@ -95,7 +95,7 @@ ByteVec FrameBuilder::build(uint32_t frame_number, FECRate fec_rate,
     // --- CRC32 over header + payload + padding (skip sync word) ---
     const uint8_t* crc_start = frame.data() + constants::SYNC_BYTES;
     size_t crc_len = frame.size() - constants::SYNC_BYTES;
-    uint32_t crc = dsca::crc32(crc_start, crc_len);
+    uint32_t crc = gw::crc32(crc_start, crc_len);
 
     frame.push_back(static_cast<uint8_t>((crc >> 24) & 0xFF));
     frame.push_back(static_cast<uint8_t>((crc >> 16) & 0xFF));
@@ -158,7 +158,7 @@ bool FrameParser::parse(const uint8_t* data, size_t len, ParsedFrame& out) {
 
         const uint8_t* crc_start = data + constants::SYNC_BYTES;
         size_t crc_len = len - constants::SYNC_BYTES - constants::CRC_BYTES;
-        uint32_t computed_crc = dsca::crc32(crc_start, crc_len);
+        uint32_t computed_crc = gw::crc32(crc_start, crc_len);
 
         out.crc_ok = (received_crc == computed_crc);
     }
@@ -185,4 +185,4 @@ bool FrameParser::parse(const uint8_t* data, size_t len, ParsedFrame& out) {
     return true;
 }
 
-} // namespace dsca
+} // namespace gw

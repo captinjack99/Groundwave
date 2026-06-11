@@ -23,7 +23,7 @@
 #include "mimo.hpp"
 #include "mimo_pipeline.hpp"
 #include "multi_stream.hpp"
-#ifdef DSCA_ENABLE_AUDIO
+#ifdef GW_ENABLE_AUDIO
 #include "hw_audio.hpp"
 #endif
 
@@ -33,7 +33,7 @@
 #include <cstring>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
@@ -414,7 +414,7 @@ void test_mimo_pipeline() {
           "MIMO demodulator produces 2× data symbols");
 }
 
-#ifdef DSCA_ENABLE_AUDIO
+#ifdef GW_ENABLE_AUDIO
 void test_hw_audio_query() {
     std::printf("[hw_audio_query]\n");
     HWAudioDevice dev;
@@ -560,7 +560,7 @@ int main() {
     test_alamouti();
     test_mimo_detectors();
     test_mimo_pipeline();
-#ifdef DSCA_ENABLE_AUDIO
+#ifdef GW_ENABLE_AUDIO
     test_hw_audio_query();
 #endif
     test_multi_stream();

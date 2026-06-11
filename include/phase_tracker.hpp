@@ -14,7 +14,7 @@
 #include <vector>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 struct PhaseTrackerConfig {
     float loop_bw_hz   = 50.0f;   ///< Loop bandwidth in Hz
@@ -113,4 +113,4 @@ private:
     bool  last_valid_ = true;  ///< was the last detectPhase() above threshold
 };
 
-} // namespace dsca
+} // namespace gw

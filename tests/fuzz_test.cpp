@@ -39,7 +39,7 @@
 #include <string>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
@@ -401,7 +401,7 @@ void test_wav_fuzz() {
     const char* tdir = std::getenv("TEMP");
     if (!tdir) tdir = std::getenv("TMP");
     if (!tdir) tdir = std::getenv("TMPDIR");
-    tmp_path = (tdir ? std::string(tdir) : std::string(".")) + "/dsca_fuzz_tmp.wav";
+    tmp_path = (tdir ? std::string(tdir) : std::string(".")) + "/gw_fuzz_tmp.wav";
     const char* tmp = tmp_path.c_str();
 
     // bits=0 → bytes_per_sample=0 → must hit the guard (return false), not divide.
@@ -447,7 +447,7 @@ void test_wav_fuzz() {
 } // anonymous
 
 int main() {
-    std::printf("=== DSCA-NG Malformed-Input Fuzz Suite ===\n");
+    std::printf("=== Groundwave Malformed-Input Fuzz Suite ===\n");
     test_config_fuzz();
     test_frame_parser_fuzz();
     test_ringbuffer_fuzz();

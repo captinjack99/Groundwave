@@ -1,6 +1,6 @@
 /**
  * @file orbgrand.hpp
- * @brief ORBGRAND (Ordered Reliability Bits GRAND) decoder for DSCA-NG v2
+ * @brief ORBGRAND (Ordered Reliability Bits GRAND) decoder for Groundwave v2
  *
  * Near-ML universal decoder for any linear block code, designed as a drop-in
  * replacement for the normalized min-sum BP decoder at short block lengths.
@@ -37,7 +37,7 @@
 #include <vector>
 #include <memory>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // ORBGRAND Decoder
@@ -190,4 +190,4 @@ private:
     std::vector<uint8_t> syndrome_;        ///< Working syndrome (m bits)
 };
 
-} // namespace dsca
+} // namespace gw

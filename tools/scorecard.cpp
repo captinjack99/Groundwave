@@ -1,6 +1,6 @@
 /**
  * @file scorecard.cpp
- * @brief Throughput + link-budget table generator for the DSCA-NG vs HD Radio
+ * @brief Throughput + link-budget table generator for the Groundwave vs HD Radio
  *        comparison. For each modcod it prints the modem's OWN required Es/N0
  *        (computeThreshold, validated to ~1 dB by benchmark_waterfall) and the
  *        net info bitrate delivered when the OFDM signal occupies each scenario
@@ -19,7 +19,7 @@
 
 #include <cstdio>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 struct MC { Modulation m; FECRate f; const char* name; };
@@ -51,7 +51,7 @@ int main() {
         {Modulation::QAM256, FECRate::Rate_3_4, "256QAM 3/4"},
     };
 
-    std::printf("=== DSCA-NG modcod ladder: required SNR + net throughput ===\n");
+    std::printf("=== Groundwave modcod ladder: required SNR + net throughput ===\n");
     std::printf("(net kbps = ComputedParams net_bitrate, RS on, auto guards, "
                 "pilot/8, CP 1/8)\n\n");
     std::printf("  modcod     | reqEs/N0 | bits/Hz | SCA 36 kHz | IBOC-fp 140 kHz\n");

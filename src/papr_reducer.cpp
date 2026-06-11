@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <numeric>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Construction
@@ -257,4 +257,4 @@ PAPRStats PAPRReducer::reduce(ComplexBuf& freq_symbol, FFTEngine& fft) {
     return stats;
 }
 
-} // namespace dsca
+} // namespace gw

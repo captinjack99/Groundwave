@@ -33,7 +33,7 @@
 #include <string>
 #include <utility>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Configuration
@@ -315,4 +315,4 @@ private:
     float norm_factor_ = 1.0f;
 };
 
-} // namespace dsca
+} // namespace gw

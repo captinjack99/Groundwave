@@ -17,7 +17,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace dsca {
+namespace gw {
 
 namespace nco_detail {
 
@@ -135,4 +135,4 @@ private:
     int32_t  phase_inc_ = 0;
 };
 
-} // namespace dsca
+} // namespace gw

@@ -7,7 +7,7 @@
 #include "types.hpp"
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 /** Bit-pattern <-> constellation-point labeling for square QAM.
  *
@@ -118,4 +118,4 @@ private:
     size_t grid_size_ = 0; // sqrt(M) for square QAM, 0 for BPSK/QPSK
 };
 
-} // namespace dsca
+} // namespace gw

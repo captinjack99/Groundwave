@@ -19,7 +19,7 @@
 #include <cmath>
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // CRC-8
@@ -345,4 +345,4 @@ void ModCodDetector::reset() {
     initialized_ = false;
 }
 
-} // namespace dsca
+} // namespace gw

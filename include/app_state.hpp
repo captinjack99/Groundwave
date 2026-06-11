@@ -25,7 +25,7 @@
 #include <cstring>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Preset Configuration
@@ -458,15 +458,16 @@ struct ComputedParams {
 // across restarts (serialized to config) rather than living only in the
 // panel's spinboxes. Defaults mirror the panel's initial widget values.
 struct LinkBudgetInputs {
-    float tx_power_w   = 1.0f;
-    float tx_gain_db   = 0.0f;
-    float rx_gain_db   = 0.0f;
-    float freq_mhz     = 98.0f;
-    float tx_height_m  = 30.0f;
-    float rx_height_m  = 2.0f;
-    int   terrain_idx  = 2;
-    float nf_db        = 8.0f;
-    float margin_db    = 3.0f;
+    float tx_power_w    = 1.0f;
+    float tx_gain_db    = 0.0f;
+    float rx_gain_db    = 0.0f;
+    float cable_loss_db = 2.0f;   ///< feedline + connectors, TX+RX total
+    float freq_mhz      = 98.0f;
+    float tx_height_m   = 30.0f;
+    float rx_height_m   = 2.0f;
+    int   terrain_idx   = 2;
+    float nf_db         = 8.0f;
+    float margin_db     = 3.0f;
 };
 
 // =========================================================================
@@ -678,4 +679,4 @@ struct AppState {
     }
 };
 
-} // namespace dsca
+} // namespace gw

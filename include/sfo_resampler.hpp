@@ -29,7 +29,7 @@
 #include "types.hpp"
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 class SFOResampler {
 public:
@@ -119,4 +119,4 @@ private:
     int    primed_;         // history fill counter (0..3)
 };
 
-} // namespace dsca
+} // namespace gw

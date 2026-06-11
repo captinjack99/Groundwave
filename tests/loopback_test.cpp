@@ -22,7 +22,7 @@
 #include <algorithm>
 #include <numeric>
 
-using namespace dsca;
+using namespace gw;
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -49,7 +49,7 @@ static void addNoise(ComplexBuf& samples, float snr_db, std::mt19937& rng) {
 }
 
 int main() {
-    printf("=== DSCA-NG v2 Loopback Test ===\n\n");
+    printf("=== Groundwave v2 Loopback Test ===\n\n");
 
     // =====================================================================
     // Test 1: Subcarrier allocation consistency
@@ -300,7 +300,7 @@ int main() {
         }
 
         // Build frame with test payload
-        uint8_t payload[] = "Hello DSCA-NG v2!";
+        uint8_t payload[] = "Hello Groundwave v2!";
         size_t payload_len = sizeof(payload) - 1; // exclude null terminator
 
         // Calculate capacity: enough for our frame through OFDM

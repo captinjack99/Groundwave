@@ -9,16 +9,21 @@
 #include <QPushButton>
 #include <QGroupBox>
 #include <QSignalBlocker>
+#include <QScrollArea>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 HierarchicalDialog::HierarchicalDialog(const AudioEngineConfig& cfg,
                                         QWidget* parent)
     : QDialog(parent), cfg_(cfg)
 {
     setWindowTitle("Hierarchical Modulation");
-    setMinimumSize(640, 720);
+    // Small enough for a 768-px-class laptop at 125 % DPI; the content
+    // scrolls, the Apply/Cancel row stays pinned (the old 720-px minimum
+    // pushed the buttons off-screen on a modal dialog).
+    setMinimumSize(560, 460);
+    resize(640, 680);
     buildUi();
 
     // Initial population from cfg_. Block signals so the populating setters
@@ -63,7 +68,11 @@ HierarchicalDialog::HierarchicalDialog(const AudioEngineConfig& cfg,
 }
 
 void HierarchicalDialog::buildUi() {
-    auto* root = new QVBoxLayout(this);
+    // Content lives on a scrollable page; only the button row is pinned.
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    auto* page = new QWidget;
+    auto* root = new QVBoxLayout(page);
 
     enable_cb_ = new QCheckBox("Enable hierarchical modulation");
     enable_cb_->setToolTip(
@@ -177,14 +186,21 @@ void HierarchicalDialog::buildUi() {
     info_label_->setWordWrap(true);
     root->addWidget(info_label_);
 
-    // ---- Buttons ----
+    // ---- Assemble: scrollable page + pinned button row ----
+    auto* scroll = new QScrollArea;
+    scroll->setWidget(page);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    outer->addWidget(scroll, 1);
+
     auto* button_row = new QHBoxLayout;
+    button_row->setContentsMargins(12, 8, 12, 12);
     auto* apply_btn = new QPushButton("Apply");
     auto* cancel_btn = new QPushButton("Cancel");
     button_row->addStretch();
     button_row->addWidget(cancel_btn);
     button_row->addWidget(apply_btn);
-    root->addLayout(button_row);
+    outer->addLayout(button_row);
     connect(apply_btn,  &QPushButton::clicked,
             this, &HierarchicalDialog::onApply);
     connect(cancel_btn, &QPushButton::clicked, this, &QDialog::reject);
@@ -268,4 +284,4 @@ void HierarchicalDialog::refreshLabels() {
     if (flow_widget_) flow_widget_->setConfig(cfg_.hier);
 }
 
-} // namespace dsca
+} // namespace gw

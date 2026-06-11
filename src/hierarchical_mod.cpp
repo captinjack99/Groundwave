@@ -26,7 +26,7 @@
 #include <numeric>
 #include <cfloat>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Helpers
@@ -402,4 +402,4 @@ void HierarchicalMapper::demapSoftLP(const ComplexBuf& symbols,
     }
 }
 
-} // namespace dsca
+} // namespace gw

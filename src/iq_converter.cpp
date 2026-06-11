@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <numeric>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // IQUpconverter
@@ -357,4 +357,4 @@ void AGC::reset() {
     est_rms_ = 0.f;
 }
 
-} // namespace dsca
+} // namespace gw

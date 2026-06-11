@@ -22,7 +22,7 @@
 #include <vector>
 #include <algorithm>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 int g_fails = 0;

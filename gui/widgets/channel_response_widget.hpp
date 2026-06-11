@@ -14,7 +14,7 @@
 #include <vector>
 #include <mutex>
 
-namespace dsca {
+namespace gw {
 
 class ChannelResponseWidget : public QWidget {
     Q_OBJECT
@@ -37,4 +37,4 @@ private:
     mutable std::mutex mtx_;
 };
 
-} // namespace dsca
+} // namespace gw

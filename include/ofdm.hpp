@@ -23,7 +23,7 @@
 #include "sample_rate_offset.hpp"
 #include <memory>
 
-namespace dsca {
+namespace gw {
 
 class PAPRReducer;  // Forward declaration
 
@@ -355,4 +355,4 @@ private:
     float      accum_timing_;
 };
 
-} // namespace dsca
+} // namespace gw

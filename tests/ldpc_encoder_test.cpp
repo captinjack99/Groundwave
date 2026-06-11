@@ -18,7 +18,7 @@
 #include <random>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 inline bool getBit(const uint8_t* d, size_t i) {

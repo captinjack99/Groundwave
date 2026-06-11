@@ -22,7 +22,7 @@
 #include <cmath>
 #include <cstddef>
 
-namespace dsca {
+namespace gw {
 
 class IntegerCFOEstimator {
 public:
@@ -88,4 +88,4 @@ private:
     float last_metric_ = 0.f;
 };
 
-} // namespace dsca
+} // namespace gw

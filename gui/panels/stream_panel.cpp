@@ -11,7 +11,7 @@
 #include <QPushButton>
 #include <cstdio>
 
-namespace dsca {
+namespace gw {
 
 StreamPanel::StreamPanel(AppState& state, QWidget* parent)
     : QWidget(parent), state_(state)
@@ -437,4 +437,4 @@ void StreamPanel::onToneFreqChanged(int id, int hz) {
     emit streamConfigChanged();
 }
 
-} // namespace dsca
+} // namespace gw

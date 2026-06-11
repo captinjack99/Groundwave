@@ -24,7 +24,7 @@
 #include <QLabel>
 #include <QGridLayout>
 
-namespace dsca {
+namespace gw {
 
 class LinkBudgetPanel : public QWidget {
     Q_OBJECT
@@ -41,7 +41,7 @@ public slots:
     void recompute();
 
 private:
-    /** Seed the 9 input widgets from state_.link_budget. Caller holds no
+    /** Seed the 10 input widgets from state_.link_budget. Caller holds no
      *  lock; this takes state_.mtx internally. Signals are blocked so the
      *  seeding doesn't trigger the recompute/write-back trigger. */
     void seedInputsFromState();
@@ -51,6 +51,7 @@ private:
     QDoubleSpinBox* tx_power_w_;       // watts (also shown in dBm)
     QDoubleSpinBox* tx_gain_db_;       // dBi
     QDoubleSpinBox* rx_gain_db_;       // dBi
+    QDoubleSpinBox* cable_loss_db_;    // dB (feedline + connectors, total)
     QDoubleSpinBox* freq_mhz_;         // MHz
     QDoubleSpinBox* tx_height_m_;      // tower / antenna height
     QDoubleSpinBox* rx_height_m_;
@@ -79,4 +80,4 @@ private:
     QLabel* out_hp_lp_gap_       = nullptr;
 };
 
-} // namespace dsca
+} // namespace gw

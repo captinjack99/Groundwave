@@ -8,7 +8,7 @@
 #include <QWidget>
 #include <QLabel>
 
-namespace dsca {
+namespace gw {
 
 class InfoPanel : public QWidget {
     Q_OBJECT
@@ -50,4 +50,4 @@ private:
     QLabel* lp_frames_;
 };
 
-} // namespace dsca
+} // namespace gw

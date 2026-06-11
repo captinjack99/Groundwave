@@ -4,7 +4,7 @@
  *
  * Saves/loads: presets (8 slots), alarm thresholds, active preset, TX config.
  * Pure C++17 — no Qt dependency. Hand-rolled JSON for zero external deps.
- * Lives in dsca_core so config can be tested headless.
+ * Lives in gw_core so config can be tested headless.
  */
 #pragma once
 
@@ -19,7 +19,7 @@
 #include <cstdlib>
 #include <cctype>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // JSON Writer (minimal, generates compact JSON)
@@ -391,6 +391,7 @@ inline std::string serializeConfig(const AppState& state) {
     w.key("tx_power_w");  w.valueFloat(state.link_budget.tx_power_w);
     w.key("tx_gain_db");  w.valueFloat(state.link_budget.tx_gain_db);
     w.key("rx_gain_db");  w.valueFloat(state.link_budget.rx_gain_db);
+    w.key("cable_loss_db"); w.valueFloat(state.link_budget.cable_loss_db);
     w.key("freq_mhz");    w.valueFloat(state.link_budget.freq_mhz);
     w.key("tx_height_m"); w.valueFloat(state.link_budget.tx_height_m);
     w.key("rx_height_m"); w.valueFloat(state.link_budget.rx_height_m);
@@ -550,6 +551,8 @@ inline bool deserializeConfig(const std::string& json, AppState& state) {
             if (lb.has("tx_power_w"))  state.link_budget.tx_power_w  = lb.at("tx_power_w").asFloat();
             if (lb.has("tx_gain_db"))  state.link_budget.tx_gain_db  = lb.at("tx_gain_db").asFloat();
             if (lb.has("rx_gain_db"))  state.link_budget.rx_gain_db  = lb.at("rx_gain_db").asFloat();
+            if (lb.has("cable_loss_db"))
+                state.link_budget.cable_loss_db = lb.at("cable_loss_db").asFloat();
             if (lb.has("freq_mhz"))    state.link_budget.freq_mhz    = lb.at("freq_mhz").asFloat();
             if (lb.has("tx_height_m")) state.link_budget.tx_height_m = lb.at("tx_height_m").asFloat();
             if (lb.has("rx_height_m")) state.link_budget.rx_height_m = lb.at("rx_height_m").asFloat();
@@ -737,4 +740,4 @@ inline bool loadConfigFromFile(const std::string& path, AppState& state) {
     return deserializeConfig(json, state);
 }
 
-} // namespace dsca
+} // namespace gw

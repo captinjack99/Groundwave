@@ -25,7 +25,7 @@ This overlay differs from the upstream `opus` port in two ways:
 
 Requires internet access during the build (for the model download). The new
 `opus.dll`/`opus.lib` (~2 MB larger) replace the stubbed ones in
-`C:\vcpkg\installed\x64-windows\`; the DSCA-NG build + deploy pick them up
+`C:\vcpkg\installed\x64-windows\`; the Groundwave build + deploy pick them up
 automatically.
 
 Pass `--overlay-ports` on every future `vcpkg install opus` so the DRED build

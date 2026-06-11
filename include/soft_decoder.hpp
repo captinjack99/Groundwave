@@ -19,7 +19,7 @@
 #include "types.hpp"
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 struct LDPCDecodeResult;  // defined in ldpc.hpp
 
@@ -43,4 +43,4 @@ public:
     virtual size_t codewordBits() const = 0;
 };
 
-} // namespace dsca
+} // namespace gw

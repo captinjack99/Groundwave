@@ -1,6 +1,6 @@
 /**
  * @file opus_codec.hpp
- * @brief Opus audio codec wrapper for DSCA-NG v2
+ * @brief Opus audio codec wrapper for Groundwave v2
  *
  * Wraps the libopus encoder/decoder with a clean C++ interface.
  * Opus is used because it handles the full audio bandwidth range
@@ -26,7 +26,7 @@ struct OpusDecoder;
 struct OpusDREDDecoder;   // Opus 1.5+ Deep REDundancy decoder state
 struct OpusDRED;          // Opus 1.5+ parsed-DRED holder
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Configuration
@@ -203,4 +203,4 @@ private:
     ::OpusDRED*        dred_     = nullptr;
 };
 
-} // namespace dsca
+} // namespace gw

@@ -27,7 +27,7 @@
 #include <vector>
 #include <cstddef>
 
-namespace dsca {
+namespace gw {
 
 struct MMSEConfig {
     float tau_rms_us    = 5.0f;   ///< RMS delay spread (microseconds)
@@ -129,4 +129,4 @@ private:
     int   weight_adapt_ctr_  = 0;      // symbols since last adapt check
 };
 
-} // namespace dsca
+} // namespace gw

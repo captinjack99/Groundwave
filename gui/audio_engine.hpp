@@ -59,7 +59,7 @@
 #include <map>
 #include <memory>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Audio Engine Configuration
@@ -485,4 +485,4 @@ private:
     void recoverAudioDevicesIfNeeded();
 };
 
-} // namespace dsca
+} // namespace gw

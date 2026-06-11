@@ -11,7 +11,7 @@
 #include <QScrollBar>
 #include <chrono>
 
-namespace dsca {
+namespace gw {
 
 AlarmPanel::AlarmPanel(AppState& state, QWidget* parent)
     : QWidget(parent), state_(state)
@@ -142,7 +142,7 @@ void AlarmPanel::buildUi() {
 // Slot: alarms updated
 // =========================================================================
 
-void AlarmPanel::onAlarmsUpdated(dsca::AlarmStatus status) {
+void AlarmPanel::onAlarmsUpdated(gw::AlarmStatus status) {
     last_status_ = status;
 
     bool any_critical = status.sync_lost || status.audio_clipped || status.level_high;
@@ -243,4 +243,4 @@ void AlarmPanel::onClearLog() {
     log_list_->clear();
 }
 
-} // namespace dsca
+} // namespace gw

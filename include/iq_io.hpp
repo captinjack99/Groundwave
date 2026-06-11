@@ -23,7 +23,7 @@
 #include <vector>
 #include <mutex>
 
-namespace dsca {
+namespace gw {
 
 class IQRecorder {
 public:
@@ -176,4 +176,4 @@ private:
     size_t   pos_         = 0;
 };
 
-} // namespace dsca
+} // namespace gw

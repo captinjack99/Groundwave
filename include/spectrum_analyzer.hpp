@@ -27,7 +27,7 @@
 #include <numeric>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Spectrum Analyzer
@@ -94,4 +94,4 @@ private:
     float binToDb(float linear_power) const;
 };
 
-} // namespace dsca
+} // namespace gw

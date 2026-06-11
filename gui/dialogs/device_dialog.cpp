@@ -9,7 +9,7 @@
 #include <QGroupBox>
 #include <QFormLayout>
 
-namespace dsca {
+namespace gw {
 
 DeviceDialog::DeviceDialog(QWidget* parent)
     : QDialog(parent)
@@ -139,7 +139,7 @@ void DeviceDialog::enumerateDevices() {
                 .arg(cap_devices_.size()));
     } else {
         status_label_->setText(
-            "Hardware audio not available. Build with -DDSCA_ENABLE_AUDIO=ON "
+            "Hardware audio not available. Build with -DGW_ENABLE_AUDIO=ON "
             "to enable real soundcard I/O.");
         hw_enable_check_->setEnabled(false);
     }
@@ -182,4 +182,4 @@ void DeviceDialog::onAccept() {
     accept();
 }
 
-} // namespace dsca
+} // namespace gw

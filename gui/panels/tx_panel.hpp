@@ -14,7 +14,7 @@
 #include <QLabel>
 #include <QCheckBox>
 
-namespace dsca {
+namespace gw {
 
 class TxPanel : public QWidget {
     Q_OBJECT
@@ -114,4 +114,4 @@ private:
     bool         updating_ = false;  // re-entrancy guard during refresh
 };
 
-} // namespace dsca
+} // namespace gw

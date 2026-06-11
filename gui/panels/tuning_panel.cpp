@@ -8,7 +8,7 @@
 #include <QHBoxLayout>
 #include <QFrame>
 
-namespace dsca {
+namespace gw {
 
 TuningPanel::TuningPanel(AppState& state, QWidget* parent)
     : QWidget(parent), state_(state)
@@ -215,7 +215,7 @@ TuningPanel::TuningPanel(AppState& state, QWidget* parent)
     refreshFromState();
 }
 
-void TuningPanel::onStatsUpdated(dsca::ModemStats stats) {
+void TuningPanel::onStatsUpdated(gw::ModemStats stats) {
     afc_offset_label_->setText(
         QString("CFO: %1 Hz   (int %2 bins)")
             .arg(stats.cfo_total_hz, 0, 'f', 1)
@@ -247,4 +247,4 @@ void TuningPanel::refreshFromState() {
     updating_ = false;
 }
 
-} // namespace dsca
+} // namespace gw

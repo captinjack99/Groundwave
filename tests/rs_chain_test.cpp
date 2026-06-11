@@ -42,7 +42,7 @@
 #include <vector>
 #include <algorithm>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
@@ -460,7 +460,7 @@ void test_vcm_per_slot() {
 } // anonymous
 
 int main() {
-    std::printf("=== DSCA-NG RS + VCM Chain Test Suite ===\n");
+    std::printf("=== Groundwave RS + VCM Chain Test Suite ===\n");
     test_rs_chain_clean();
     test_rs_capacity();
     test_vcm_per_slot();

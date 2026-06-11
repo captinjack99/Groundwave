@@ -9,7 +9,7 @@
 #include "../style.hpp"
 #include <QWidget>
 
-namespace dsca {
+namespace gw {
 
 class MeterWidget : public QWidget {
     Q_OBJECT
@@ -49,4 +49,4 @@ private:
     float tx_papr_db_ = 0.f;     ///< TX PAPR readout
 };
 
-} // namespace dsca
+} // namespace gw

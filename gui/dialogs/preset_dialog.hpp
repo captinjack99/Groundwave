@@ -9,7 +9,7 @@
 #include <QLineEdit>
 #include <QSpinBox>
 
-namespace dsca {
+namespace gw {
 
 class PresetDialog : public QDialog {
     Q_OBJECT
@@ -37,4 +37,4 @@ private:
     QLineEdit*    name_edit_;
 };
 
-} // namespace dsca
+} // namespace gw

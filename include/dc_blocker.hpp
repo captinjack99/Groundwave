@@ -16,7 +16,7 @@
 #include "types.hpp"
 #include <cstddef>
 
-namespace dsca {
+namespace gw {
 
 class DCBlocker {
 public:
@@ -82,4 +82,4 @@ private:
     ComplexSample yc_prev_ {0.f, 0.f};
 };
 
-} // namespace dsca
+} // namespace gw

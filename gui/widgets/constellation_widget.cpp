@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <limits>
 
-namespace dsca {
+namespace gw {
 
 namespace {
 const char* syncStr(SyncState s) {
@@ -364,4 +364,4 @@ void ConstellationWidget::drawReceivedPoints(QPainter& p,
     }
 }
 
-} // namespace dsca
+} // namespace gw

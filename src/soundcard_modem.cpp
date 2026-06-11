@@ -3,7 +3,7 @@
  * @brief Soundcard modem implementation
  *
  * Currently implements loopback mode for testing. Hardware mode (miniaudio)
- * will be added when building with DSCA_ENABLE_AUDIO defined.
+ * will be added when building with GW_ENABLE_AUDIO defined.
  */
 
 #include "soundcard_modem.hpp"
@@ -14,7 +14,7 @@
 #include <cstdio>
 #include <utility>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Ring Buffer
@@ -463,4 +463,4 @@ void SoundcardModem::reset() {
     complex_loopback_buf_.clear();
 }
 
-} // namespace dsca
+} // namespace gw

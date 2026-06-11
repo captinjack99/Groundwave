@@ -7,7 +7,7 @@
 #include <QFrame>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 static QString fmtBitrate(float bps) {
     if (bps >= 1e6f) return QString("%1 Mbps").arg(bps / 1e6f, 0, 'f', 2);
@@ -186,4 +186,4 @@ void InfoPanel::refresh() {
     }
 }
 
-} // namespace dsca
+} // namespace gw

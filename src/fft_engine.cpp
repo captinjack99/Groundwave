@@ -11,13 +11,13 @@
 #include <stdexcept>
 #include <algorithm>
 
-#ifdef DSCA_USE_FFTW3
+#ifdef GW_USE_FFTW3
 #include <fftw3.h>
 #endif
 
-namespace dsca {
+namespace gw {
 
-#ifdef DSCA_USE_FFTW3
+#ifdef GW_USE_FFTW3
 
 // =========================================================================
 // Impl — FFTW3 single-precision backend
@@ -131,7 +131,7 @@ struct FFTEngine::Impl {
     }
 };
 
-#endif // DSCA_USE_FFTW3
+#endif // GW_USE_FFTW3
 
 // =========================================================================
 // Public API
@@ -152,7 +152,7 @@ void FFTEngine::forward(const ComplexBuf& input, ComplexBuf& output) {
     if (input.size() < size_) {
         throw std::invalid_argument("Input buffer too small for FFT");
     }
-#ifdef DSCA_USE_FFTW3
+#ifdef GW_USE_FFTW3
     impl_->transform(input, output, /*inverse=*/false, 1.0f);
 #else
     impl_->transform(input, output, impl_->twiddles, 1.0f);
@@ -163,7 +163,7 @@ void FFTEngine::inverse(const ComplexBuf& input, ComplexBuf& output) {
     if (input.size() < size_) {
         throw std::invalid_argument("Input buffer too small for IFFT");
     }
-#ifdef DSCA_USE_FFTW3
+#ifdef GW_USE_FFTW3
     impl_->transform(input, output, /*inverse=*/true,
                      1.0f / static_cast<float>(size_));
 #else
@@ -176,4 +176,4 @@ bool FFTEngine::isValidSize(size_t n) {
     return n >= 4 && (n & (n - 1)) == 0;
 }
 
-} // namespace dsca
+} // namespace gw

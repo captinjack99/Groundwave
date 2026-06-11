@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DSCA-NG application icon, master artwork (use at 48 px and above;
+  groundwave_small.svg carries the simplified small-size variant).
+
+  The mark is the modem's own waveform: OFDM subcarrier bars under a
+  raised-cosine envelope, the DC-null notch in the center, and one
+  pilot subcarrier in amber. Colors match gui/style.hpp
+  (C_SIGNAL #00B4FF, C_PILOT/amber #D2823F, BG_BASE #0A0A0D).
+-->
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="120" height="120" rx="26" fill="#0A0A0D"/>
+  <rect x="18" y="72" width="6" height="16" rx="3" fill="#00B4FF"/>
+  <rect x="28" y="58" width="6" height="30" rx="3" fill="#00B4FF"/>
+  <rect x="38" y="44" width="6" height="44" rx="3" fill="#00B4FF"/>
+  <rect x="48" y="34" width="6" height="54" rx="3" fill="#00B4FF"/>
+  <rect x="66" y="34" width="6" height="54" rx="3" fill="#00B4FF"/>
+  <rect x="76" y="44" width="6" height="44" rx="3" fill="#D2823F"/>
+  <rect x="86" y="58" width="6" height="30" rx="3" fill="#00B4FF"/>
+  <rect x="96" y="72" width="6" height="16" rx="3" fill="#00B4FF"/>
+  <rect x="18" y="92" width="84" height="2" rx="1" fill="#26262E"/>
+</svg>

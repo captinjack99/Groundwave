@@ -12,7 +12,7 @@
 #include <random>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 int g_fails = 0;

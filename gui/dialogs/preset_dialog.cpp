@@ -11,7 +11,7 @@
 #include <QFrame>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 static const char* modName(Modulation m) {
     switch (m) {
@@ -240,4 +240,4 @@ void PresetDialog::onRename() {
     refreshTable();
 }
 
-} // namespace dsca
+} // namespace gw

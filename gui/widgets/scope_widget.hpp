@@ -12,7 +12,7 @@
 #include <vector>
 #include <mutex>
 
-namespace dsca {
+namespace gw {
 
 class ScopeWidget : public QWidget {
     Q_OBJECT
@@ -30,6 +30,9 @@ public:
 
 protected:
     void paintEvent(QPaintEvent*) override;
+    /** Right-click: trigger mode + timebase — the on-screen "1024× TRIG"
+     *  label used to advertise settings that had no UI. */
+    void contextMenuEvent(QContextMenuEvent*) override;
 
 private:
     static constexpr size_t BUF_LEN = 4096;
@@ -37,7 +40,8 @@ private:
     size_t             write_pos_ = 0;
     int                time_base_ = 1024;   // visible width in samples
     bool               triggered_ = true;
+    bool               has_data_  = false;  // any samples ever pushed?
     mutable std::mutex mtx_;
 };
 
-} // namespace dsca
+} // namespace gw

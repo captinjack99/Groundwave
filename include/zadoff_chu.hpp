@@ -21,7 +21,7 @@
 #include <vector>
 #include <numeric>
 
-namespace dsca {
+namespace gw {
 
 inline ComplexBuf zadoffChu(size_t N, size_t root = 1) {
     if (N == 0) return {};
@@ -58,4 +58,4 @@ inline size_t zadoffChuOptimalRoot(size_t N) {
     return 1;
 }
 
-} // namespace dsca
+} // namespace gw

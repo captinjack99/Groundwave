@@ -29,7 +29,7 @@
 #include <algorithm>
 #include <numeric>
 
-using namespace dsca;
+using namespace gw;
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -114,7 +114,7 @@ inline bool getBit(const uint8_t* d, size_t i) {
 } // anonymous
 
 int main() {
-    printf("=== DSCA-NG v2 Modem Test Suite ===\n\n");
+    printf("=== Groundwave v2 Modem Test Suite ===\n\n");
 
     // =====================================================================
     // Test 1: I/Q round-trip at default center freq

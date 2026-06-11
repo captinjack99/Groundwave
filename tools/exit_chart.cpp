@@ -1,6 +1,6 @@
 /**
  * @file exit_chart.cpp
- * @brief EXIT (EXtrinsic Information Transfer) chart for the DSCA-NG BICM-ID
+ * @brief EXIT (EXtrinsic Information Transfer) chart for the Groundwave BICM-ID
  *        receiver. Computes the two transfer curves whose relative position
  *        predicts whether iterative demapping+decoding converges:
  *
@@ -54,7 +54,7 @@
 #include <string>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
@@ -357,7 +357,7 @@ int runChart(Modulation mod, FECRate fec, float esno_db, Labeling lab) {
     std::mt19937 rng(0x1C0DEu);
 
     const float thr = computeThreshold(mod, fec).threshold_db;
-    std::printf("=== DSCA-NG BICM-ID EXIT chart ===\n");
+    std::printf("=== Groundwave BICM-ID EXIT chart ===\n");
     std::printf("modcod = %s %s   labeling = %s   channel Es/N0 = %.2f dB   "
                 "(computeThreshold = %.2f dB, margin %+.2f dB)\n",
                 modulationName(mod), fecRateName(fec),

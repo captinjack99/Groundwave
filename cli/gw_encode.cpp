@@ -1,13 +1,13 @@
 /**
- * @file dsca_encode.cpp
- * @brief CLI: WAV audio → DSCA baseband file (complex float32 IQ).
+ * @file gw_encode.cpp
+ * @brief CLI: WAV audio → Groundwave baseband file (complex float32 IQ).
  *
  * Reads a WAV input, encodes via Opus → frame builder → LDPC → interleaver
  * → symbol mapper → OFDM modulator → IQ upconverter, and writes the
  * resulting passband float samples to a `.raw` file.
  *
  * Usage:
- *   dsca_encode -i input.wav -o output.raw [options]
+ *   gw_encode -i input.wav -o output.raw [options]
  *
  * Options:
  *   -m <bpsk|qpsk|qam16|qam64|qam256|qam1024|qam4096>
@@ -34,13 +34,13 @@
 #include <vector>
 #include <cstdlib>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
 void usage() {
     std::fprintf(stderr,
-        "dsca_encode -i in.wav -o out.raw [-m mod] [-f rate] [-F fft] [-s sr] [-b bps] [-c freq]\n"
+        "gw_encode -i in.wav -o out.raw [-m mod] [-f rate] [-F fft] [-s sr] [-b bps] [-c freq]\n"
         "  -m: bpsk|qpsk|qam16|qam64|qam256|qam1024|qam4096 (default: qpsk)\n"
         "  -f: 1/4 1/3 2/5 1/2 3/5 2/3 3/4 4/5 5/6 8/9 9/10 (default: 1/2)\n"
         "  -F: fft size, power of two (default: 256)\n"
@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
     size_t opus_frame_samples = oc.frameSamplesTotal();
 
     // Set up modem chain. target_bw_hz keeps the active subcarriers inside
-    // the passband around center_hz (same derivation as dsca_decode, so the
+    // the passband around center_hz (same derivation as gw_decode, so the
     // two tools' allocations agree by default).
     OFDMParams ofdm;
     ofdm.fft_size    = static_cast<uint16_t>(fft_size);

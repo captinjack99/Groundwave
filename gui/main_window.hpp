@@ -1,6 +1,6 @@
 /**
  * @file main_window.hpp
- * @brief DSCA-NG main window — QMainWindow + QDockWidget layout
+ * @brief Groundwave main window — QMainWindow + QDockWidget layout
  *
  * Layout:
  *   Central:    SpectrumWidget (full width, top 60%) + ConstellationWidget (bottom-right)
@@ -17,8 +17,9 @@
 #include <QMainWindow>
 #include <QDockWidget>
 #include <QLabel>
+#include <QPointer>
 
-namespace dsca {
+namespace gw {
 
 // Forward declarations
 class SpectrumWidget;
@@ -35,6 +36,8 @@ class TuningPanel;
 class ChannelResponseWidget;
 class EyeDiagramWidget;
 class PLSStatusWidget;
+class DeviceDialog;
+class HierarchicalDialog;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -60,6 +63,14 @@ private:
     /// lock AND the panel refreshes).
     void saveConfigInteractive();
     void loadConfigInteractive();
+    /** UI preference persistence (QSettings "Groundwave/MainWindow"):
+     *  engine-menu toggles and view options (theme, mask, EVM detail,
+     *  colormap, peak hold, averaging, auto-range, dB range). Restore
+     *  runs at the end of the ctor by toggling the named menu actions so
+     *  the engine config and widget state stay in sync with the checks;
+     *  save runs from closeEvent. */
+    void restoreUiPrefs();
+    void saveUiPrefs();
 
 public:
     /** Open the hierarchical-modulation configuration dialog. Public
@@ -101,6 +112,24 @@ private:
     QLabel* status_engine_ = nullptr;   // engine running/stopped + frame counter
     QLabel* status_audio_  = nullptr;   // audio_monitor health
     QLabel* status_modcod_ = nullptr;   // live PLS-signaled modcod (post-AMC/VCM)
+
+    // Non-modal configuration palettes. Single instance while open
+    // (re-open raises), recreated on each open so they always seed from
+    // the current engine/app state. QPointer nulls itself on close
+    // (WA_DeleteOnClose).
+    QPointer<DeviceDialog>       device_dlg_;
+    QPointer<HierarchicalDialog> hier_dlg_;
+
+    /** Operate mode: progressive disclosure. ON hides the engineering
+     *  docks (Tuning, Link Budget, Streams, Info, Alarms, diagnostics)
+     *  and leaves the operating surface: spectrum, constellation, TX,
+     *  RX, meters. Dock layout is saved on entry and restored on exit;
+     *  the mode itself persists across sessions. */
+    void setOperateMode(bool on);
+    bool operate_mode_ = false;
+
+    /** First-run welcome card (also Help → Welcome). */
+    void showWelcomeTour();
 };
 
-} // namespace dsca
+} // namespace gw

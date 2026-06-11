@@ -8,7 +8,7 @@
 #include <cmath>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 MeterWidget::MeterWidget(QWidget* parent) : QWidget(parent) {
     setAttribute(Qt::WA_OpaquePaintEvent);
@@ -150,4 +150,4 @@ void MeterWidget::paintBar(QPainter& p, const QRectF& r,
                Qt::AlignHCenter | Qt::AlignTop, label);
 }
 
-} // namespace dsca
+} // namespace gw

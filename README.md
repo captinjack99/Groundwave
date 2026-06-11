@@ -1,10 +1,18 @@
-# DSCA-NG
+<img src="assets/icon/groundwave_256.png" width="80" align="right" alt="Groundwave icon: OFDM subcarrier bars with a DC notch and one pilot tone"/>
 
-A software-defined **OFDM digital radio modem**. It carries multi-stream
-Opus audio over a complex-baseband OFDM waveform with QC-LDPC forward error
-correction, and ships with a Qt6 desktop application for live operation and
-diagnostics plus a set of command-line tools. It runs entirely in software
-loopback (no hardware required) and can also drive a real soundcard.
+# Groundwave
+
+*Digital voice, down to earth.*
+
+A software-defined **OFDM digital radio modem** that puts broadcast-quality
+voice on any radio — open codecs, no vocoder chips, and every dB of the
+link visible on screen. It carries multi-stream Opus audio over a
+complex-baseband OFDM waveform with QC-LDPC forward error correction, and
+ships with a Qt6 desktop application for live operation and diagnostics
+plus a set of command-line tools. It runs entirely in software loopback
+(no hardware required) and can also drive a real soundcard.
+
+> Formerly published as DSCA-NG.
 
 <!-- Replace OWNER/REPO after the first push to enable the badge. -->
 ![build](https://github.com/OWNER/REPO/actions/workflows/build.yml/badge.svg)
@@ -28,7 +36,7 @@ loopback (no hardware required) and can also drive a real soundcard.
 - **Qt6 GUI**: live spectrum + waterfall, constellation, eye diagram,
   time-domain scope, channel response, link budget, per-stream mixer,
   alarms, and a preset system with JSON config persistence.
-- **CLI tools**: `dsca_encode`, `dsca_decode`, and `dsca_modem` for
+- **CLI tools**: `gw_encode`, `gw_decode`, and `gw_modem` for
   headless / scripted use.
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) and
@@ -38,8 +46,8 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) and
 
 | Path | Contents |
 |------|----------|
-| `include/`, `src/` | Core DSP library (`dsca_core`): OFDM, LDPC, framing, codecs, modem |
-| `gui/`, `main.cpp` | Qt6 application (`dsca_ng`) |
+| `include/`, `src/` | Core DSP library (`gw_core`): OFDM, LDPC, framing, codecs, modem |
+| `gui/`, `main.cpp` | Qt6 application (`groundwave`) |
 | `cli/` | Command-line tools |
 | `tests/` | Unit + integration tests (run via `ctest`) and the GUI walker |
 | `vcpkg-overlay/` | Overlay port to build libopus with DRED enabled |
@@ -99,11 +107,11 @@ See [`vcpkg-overlay/README.md`](vcpkg-overlay/README.md).
 
 ## Running
 
-- **GUI**: launch `dsca_ng`. Pick a preset (F2–F8), press **TX**, and the
+- **GUI**: launch `groundwave`. Pick a preset (F2–F8), press **TX**, and the
   built-in software loopback runs the full TX→RX chain; the diagnostics
   panels show the live constellation, spectrum, eye, and sync state.
-- **CLI**: `dsca_encode` / `dsca_decode` move audio ↔ modem frames as
-  files; `dsca_modem` runs a live session — software loopback (with
+- **CLI**: `gw_encode` / `gw_decode` move audio ↔ modem frames as
+  files; `gw_modem` runs a live session — software loopback (with
   optional AWGN), TX/RX against real audio devices, or a virtual-cable
   end-to-end loop. Run any tool with `--help` for options.
 

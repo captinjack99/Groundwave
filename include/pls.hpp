@@ -57,7 +57,7 @@
 #include <string>
 #include <cstring>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // PLS Block
@@ -270,4 +270,4 @@ private:
     bool       initialized_  = false;
 };
 
-} // namespace dsca
+} // namespace gw

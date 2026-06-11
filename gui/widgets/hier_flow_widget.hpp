@@ -19,7 +19,7 @@
 #include "../../include/hierarchical_mod.hpp"
 #include <QWidget>
 
-namespace dsca {
+namespace gw {
 
 class HierFlowWidget : public QWidget {
     Q_OBJECT
@@ -47,4 +47,4 @@ private:
     void drawSignalFlow(QPainter& p, int x, int y, int w, int h) const;
 };
 
-} // namespace dsca
+} // namespace gw

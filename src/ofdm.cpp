@@ -33,7 +33,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // PRNG for deterministic pilot/preamble sequences (must match TX & RX)
@@ -1204,4 +1204,4 @@ void OFDMSynchronizer::reset() {
     accum_timing_ = 0.f;
 }
 
-} // namespace dsca
+} // namespace gw

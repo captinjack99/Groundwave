@@ -8,7 +8,7 @@
 #include <QFrame>
 #include <QSignalBlocker>
 
-namespace dsca {
+namespace gw {
 
 namespace {
 inline float wattsToDbm(float w) {
@@ -76,6 +76,17 @@ LinkBudgetPanel::LinkBudgetPanel(AppState& state, QWidget* parent)
         "(home base) use the directional antenna gain; for portable use "
         "0 dBi.");
     addRow("RX Ant Gain", rx_gain_db_);
+
+    cable_loss_db_ = new QDoubleSpinBox();
+    cable_loss_db_->setRange(0.0, 20.0);
+    cable_loss_db_->setDecimals(1);
+    cable_loss_db_->setValue(2.0);
+    cable_loss_db_->setSuffix(" dB");
+    cable_loss_db_->setToolTip(
+        "Total feedline + connector loss, TX and RX combined. Typical "
+        "1–3 dB for short low-loss coax runs; more for long or lossy "
+        "cable at higher frequencies. (Was a hidden 2 dB constant.)");
+    addRow("Cable Loss", cable_loss_db_);
 
     freq_mhz_ = new QDoubleSpinBox();
     freq_mhz_->setRange(30.0, 6000.0);
@@ -218,6 +229,7 @@ LinkBudgetPanel::LinkBudgetPanel(AppState& state, QWidget* parent)
             state_.link_budget.tx_power_w   = static_cast<float>(tx_power_w_->value());
             state_.link_budget.tx_gain_db   = static_cast<float>(tx_gain_db_->value());
             state_.link_budget.rx_gain_db   = static_cast<float>(rx_gain_db_->value());
+            state_.link_budget.cable_loss_db = static_cast<float>(cable_loss_db_->value());
             state_.link_budget.freq_mhz     = static_cast<float>(freq_mhz_->value());
             state_.link_budget.tx_height_m  = static_cast<float>(tx_height_m_->value());
             state_.link_budget.rx_height_m  = static_cast<float>(rx_height_m_->value());
@@ -230,6 +242,7 @@ LinkBudgetPanel::LinkBudgetPanel(AppState& state, QWidget* parent)
     connect(tx_power_w_,   QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
     connect(tx_gain_db_,   QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
     connect(rx_gain_db_,   QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
+    connect(cable_loss_db_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
     connect(freq_mhz_,     QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
     connect(tx_height_m_,  QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
     connect(rx_height_m_,  QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, trigger);
@@ -258,9 +271,11 @@ void LinkBudgetPanel::seedInputsFromState() {
     const QSignalBlocker b6(terrain_);
     const QSignalBlocker b7(nf_db_);
     const QSignalBlocker b8(margin_db_);
+    const QSignalBlocker b9(cable_loss_db_);
     tx_power_w_->setValue(lb.tx_power_w);
     tx_gain_db_->setValue(lb.tx_gain_db);
     rx_gain_db_->setValue(lb.rx_gain_db);
+    cable_loss_db_->setValue(lb.cable_loss_db);
     freq_mhz_->setValue(lb.freq_mhz);
     tx_height_m_->setValue(lb.tx_height_m);
     rx_height_m_->setValue(lb.rx_height_m);
@@ -409,7 +424,7 @@ void LinkBudgetPanel::recompute() {
 
     // Path loss budget = TX_dBm + TX_gain - cable_loss + RX_gain - required_Pr
     float tx_dbm = wattsToDbm(static_cast<float>(tx_power_w_->value()));
-    float cable_loss = 2.f;     // assumed
+    float cable_loss = static_cast<float>(cable_loss_db_->value());
     float pl_budget = tx_dbm + tx_gain_db_->value() - cable_loss
                     + rx_gain_db_->value() - required_pr_dbm;
 
@@ -498,4 +513,4 @@ void LinkBudgetPanel::recompute() {
     }
 }
 
-} // namespace dsca
+} // namespace gw

@@ -37,7 +37,7 @@
 #include <cstring>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 struct BICMConfig {
     size_t outer_iterations = 1;     ///< 1 = standard BICM, >1 = iterative
@@ -223,4 +223,4 @@ private:
     std::vector<float>   base_;       ///< per-candidate metric scratch (demapWithPriors)
 };
 
-} // namespace dsca
+} // namespace gw

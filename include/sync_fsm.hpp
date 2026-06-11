@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 inline const char* syncStateName(SyncState s) {
     switch (s) {
@@ -132,4 +132,4 @@ private:
     int consecutive_bad_  = 0;
 };
 
-} // namespace dsca
+} // namespace gw

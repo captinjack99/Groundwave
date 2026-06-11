@@ -21,7 +21,7 @@
 #include <cstring>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Bit manipulation (same convention as ldpc.cpp)
@@ -710,4 +710,4 @@ LDPCDecodeResult ORBGRANDDecoder::decodePosterior(const float* llr_in,
     return r;
 }
 
-} // namespace dsca
+} // namespace gw

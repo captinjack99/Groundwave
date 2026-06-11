@@ -18,7 +18,7 @@
 #include <cmath>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 struct PolyphaseConfig {
     float transition_bw = 0.05f;  ///< Transition band as fraction of fs (output)
@@ -260,4 +260,4 @@ private:
     size_t L_, M_;
 };
 
-} // namespace dsca
+} // namespace gw

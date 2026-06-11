@@ -13,7 +13,7 @@
 #include <cstring>
 #include <cstdio>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Helpers
@@ -380,4 +380,4 @@ void OpusAudioDecoder::reset() {
     }
 }
 
-} // namespace dsca
+} // namespace gw

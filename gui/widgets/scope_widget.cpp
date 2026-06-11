@@ -4,13 +4,16 @@
 #include "scope_widget.hpp"
 #include <QPainter>
 #include <QPaintEvent>
+#include <QContextMenuEvent>
+#include <QMenu>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 ScopeWidget::ScopeWidget(QWidget* parent) : QWidget(parent), buf_(BUF_LEN, 0.f) {
     setMinimumHeight(120);
     setMinimumWidth(240);
+    setToolTip("Time-domain scope. Right-click for trigger mode and timebase.");
 }
 
 void ScopeWidget::pushSamples(const float* samples, size_t n) {
@@ -19,6 +22,7 @@ void ScopeWidget::pushSamples(const float* samples, size_t n) {
         buf_[write_pos_] = samples[i];
         write_pos_ = (write_pos_ + 1) % BUF_LEN;
     }
+    if (n > 0) has_data_ = true;
     update();
 }
 
@@ -47,10 +51,24 @@ void ScopeWidget::paintEvent(QPaintEvent*) {
     // Snapshot buffer under lock
     std::vector<float> snap;
     size_t wp;
+    bool has_data;
     {
         std::lock_guard<std::mutex> lk(mtx_);
         snap = buf_;
         wp   = write_pos_;
+        has_data = has_data_;
+    }
+
+    // Empty state: nothing has ever been pushed — say so instead of
+    // painting a flatline that reads as "signal present, just silent".
+    if (!has_data) {
+        p.setPen(QColor(142, 142, 147));
+        QFont f;
+        f.setPixelSize(11);
+        p.setFont(f);
+        p.drawText(rect(), Qt::AlignCenter,
+                   "Scope — waiting for audio");
+        return;
     }
 
     // Determine starting index — last `time_base_` samples ending at wp
@@ -102,4 +120,24 @@ void ScopeWidget::paintEvent(QPaintEvent*) {
                    .arg(triggered_ ? "TRIG" : "FREE"));
 }
 
-} // namespace dsca
+void ScopeWidget::contextMenuEvent(QContextMenuEvent* e) {
+    QMenu menu(this);
+
+    auto* trig = menu.addAction("Triggered (Schmitt edge)");
+    trig->setCheckable(true);
+    trig->setChecked(triggered_);
+    connect(trig, &QAction::toggled, this, &ScopeWidget::setTriggered);
+
+    auto* tb_menu = menu.addMenu("Timebase");
+    for (int tb : {256, 512, 1024, 2048, 4096}) {
+        auto* a = tb_menu->addAction(QString("%1 samples").arg(tb));
+        a->setCheckable(true);
+        a->setChecked(tb == time_base_);
+        connect(a, &QAction::triggered, this,
+                [this, tb]() { setTimeBase(tb); });
+    }
+
+    menu.exec(e->globalPos());
+}
+
+} // namespace gw

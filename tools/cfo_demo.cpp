@@ -1,7 +1,7 @@
 /**
  * @file cfo_demo.cpp
  * @brief Carrier-frequency-offset (CFO) before/after demonstration for the
- *        DSCA-NG receive path. Sweeps a set of CFO values and reports info-bit
+ *        Groundwave receive path. Sweeps a set of CFO values and reports info-bit
  *        errors for two receiver configurations on an otherwise clean channel:
  *
  *   UNCORRECTED — the historical engine that estimated the fractional CFO but
@@ -42,7 +42,7 @@
 #include <string>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
 
     const float cfos[] = {0.f, 5.f, 10.f, 20.f, 40.f, 60.f, 80.f};
 
-    std::printf("=== DSCA-NG CFO before/after (clean channel) ===\n");
+    std::printf("=== Groundwave CFO before/after (clean channel) ===\n");
     std::printf("mod = %s  fec = %s   subcarrier spacing = 187.5 Hz\n",
                 modulationName(mod), fecRateName(fec));
     std::printf("info-bit errors vs carrier-frequency offset\n\n");

@@ -30,7 +30,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace dsca {
+namespace gw {
 
 struct IQBalanceConfig {
     float ema_alpha    = 1e-4f; ///< Update rate for I·Q and I²-Q² statistics
@@ -137,4 +137,4 @@ private:
     float amp_skew_db_    = 0.f;
 };
 
-} // namespace dsca
+} // namespace gw

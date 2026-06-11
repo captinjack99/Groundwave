@@ -7,7 +7,7 @@
 #include "types.hpp"
 #include <memory>
 
-namespace dsca {
+namespace gw {
 
 class FFTEngine {
 public:
@@ -35,4 +35,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-} // namespace dsca
+} // namespace gw

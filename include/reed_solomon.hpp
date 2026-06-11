@@ -28,7 +28,7 @@
 #include <array>
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 class ReedSolomon {
 public:
@@ -79,4 +79,4 @@ private:
     // log_[0]=0 aliasing via their explicit zero checks above.)
 };
 
-} // namespace dsca
+} // namespace gw

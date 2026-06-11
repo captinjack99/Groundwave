@@ -8,7 +8,7 @@
 #include <cstring>
 #include <cassert>
 
-using namespace dsca;
+using namespace gw;
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -162,7 +162,7 @@ int main() {
     TEST("CRC-32/BZIP2 known-answer (\"123456789\" == 0xFC891918)");
     {
         const char* s = "123456789";
-        uint32_t c = dsca::crc32(reinterpret_cast<const uint8_t*>(s), 9);
+        uint32_t c = gw::crc32(reinterpret_cast<const uint8_t*>(s), 9);
         if (c == 0xFC891918u) {
             PASS();
         } else {

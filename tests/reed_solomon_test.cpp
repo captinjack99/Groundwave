@@ -16,7 +16,7 @@
 #include <random>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
@@ -180,7 +180,7 @@ void test_uncorrectable() {
 } // anonymous
 
 int main() {
-    std::printf("=== DSCA-NG Reed-Solomon Test Suite ===\n");
+    std::printf("=== Groundwave Reed-Solomon Test Suite ===\n");
     test_clean_roundtrip();
     test_single_error();
     test_multi_errors();

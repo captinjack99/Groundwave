@@ -20,7 +20,7 @@
       "description": "Builds the library with avx2 instruction set"
     },
     "dred": {
-      "description": "Enable Deep REDundancy (DRED) neural FEC + deep PLC (Opus 1.5). Adds ~2 MB of pre-trained model weights, which the build downloads over the network. Required by DSCA-NG SOTA-5 (DRED decoder-side recovery)."
+      "description": "Enable Deep REDundancy (DRED) neural FEC + deep PLC (Opus 1.5). Adds ~2 MB of pre-trained model weights, which the build downloads over the network. Required by Groundwave SOTA-5 (DRED decoder-side recovery)."
     }
   }
 }

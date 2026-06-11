@@ -17,7 +17,7 @@
 #include <QPushButton>
 #include <QCheckBox>
 
-namespace dsca {
+namespace gw {
 
 class DeviceDialog : public QDialog {
     Q_OBJECT
@@ -33,6 +33,21 @@ public:
     int  selectedPlaybackDevice() const { return pb_device_; }
     int  selectedCaptureDevice()  const { return cap_device_; }
     bool hwAudioEnabled()         const { return hw_enabled_; }
+
+    /** Device names for persistence. Enumeration INDICES are not stable
+     *  across reboots or hot-plug, so the saved config stores names and
+     *  re-resolves them at startup. Empty string for default/-1 or
+     *  out-of-range indices. */
+    QString playbackDeviceName(int idx) const {
+        return (idx >= 0 && idx < static_cast<int>(pb_devices_.size()))
+            ? QString::fromStdString(pb_devices_[static_cast<size_t>(idx)].name)
+            : QString();
+    }
+    QString captureDeviceName(int idx) const {
+        return (idx >= 0 && idx < static_cast<int>(cap_devices_.size()))
+            ? QString::fromStdString(cap_devices_[static_cast<size_t>(idx)].name)
+            : QString();
+    }
 
 signals:
     void deviceConfigChanged(int playback_device, int capture_device, bool hw_enabled);
@@ -64,4 +79,4 @@ private:
     std::vector<AudioDeviceInfo> cap_devices_;
 };
 
-} // namespace dsca
+} // namespace gw

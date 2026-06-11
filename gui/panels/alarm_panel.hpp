@@ -9,7 +9,7 @@
 #include <QListWidget>
 #include <QTimer>
 
-namespace dsca {
+namespace gw {
 
 class AlarmPanel : public QWidget {
     Q_OBJECT
@@ -17,7 +17,7 @@ public:
     explicit AlarmPanel(AppState& state, QWidget* parent = nullptr);
 
 public slots:
-    void onAlarmsUpdated(dsca::AlarmStatus status);
+    void onAlarmsUpdated(gw::AlarmStatus status);
 
 private slots:
     void onBlink();
@@ -47,4 +47,4 @@ private:
     uint64_t last_log_revision_ = 0;  ///< change detection for refreshLog()
 };
 
-} // namespace dsca
+} // namespace gw

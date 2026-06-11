@@ -16,7 +16,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Construction
@@ -123,7 +123,7 @@ SymbolMapper::SymbolMapper(Modulation mod, Labeling labeling)
         case Modulation::QAM4096: initSquareQAM(4096); break;
         default: throw std::invalid_argument("Unsupported modulation");
     }
-    bps_ = dsca::bitsPerSymbol(mod);
+    bps_ = gw::bitsPerSymbol(mod);
 
     // Precompute bit patterns
     size_t M = const_.size();
@@ -606,4 +606,4 @@ void SymbolMapper::demapSoftPWL(const ComplexBuf& symbols,
     }
 }
 
-} // namespace dsca
+} // namespace gw

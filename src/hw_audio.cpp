@@ -2,7 +2,7 @@
  * @file hw_audio.cpp
  * @brief Hardware audio I/O implementation using miniaudio
  *
- * When DSCA_ENABLE_AUDIO is defined:
+ * When GW_ENABLE_AUDIO is defined:
  *   - Includes miniaudio.h with implementation
  *   - Creates duplex device (playback + capture)
  *   - Callbacks read from tx_ring, write to rx_ring
@@ -10,7 +10,7 @@
  * When not defined: stub file compiles to nothing.
  */
 
-#ifdef DSCA_ENABLE_AUDIO
+#ifdef GW_ENABLE_AUDIO
 
 #define MINIAUDIO_IMPLEMENTATION
 // Vendored single-header: suppress the int/size_t narrowing warnings it
@@ -32,7 +32,7 @@
 #include <atomic>
 #include <cstring>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Pimpl Implementation (hides miniaudio types from header)
@@ -81,13 +81,13 @@ struct HWAudioDevice::Impl {
 // =========================================================================
 
 // Duplex callback: reads from tx_ring for output, writes to rx_ring from input.
-// Must be at file scope (NOT inside namespace dsca) so its type matches the
+// Must be at file scope (NOT inside namespace gw) so its type matches the
 // ma_device_data_proc function-pointer signature exactly.
-} // namespace dsca
+} // namespace gw
 
 static void audio_callback(::ma_device* pDevice, void* pOutput, const void* pInput,
                            ma_uint32 frameCount) {
-    auto* impl = static_cast<dsca::HWAudioDevice::Impl*>(pDevice->pUserData);
+    auto* impl = static_cast<gw::HWAudioDevice::Impl*>(pDevice->pUserData);
     if (!impl) return;
 
     auto* out = static_cast<float*>(pOutput);
@@ -107,7 +107,7 @@ static void audio_callback(::ma_device* pDevice, void* pOutput, const void* pInp
     // surplus stream rings wrap around modulo pb_ch so they still mix into
     // the available channels rather than being silently dropped.
     if (impl->ch_count > 0 && out && pb_ch > 0) {
-        constexpr size_t SCRATCH = dsca::HWAudioDevice::Impl::CB_SCRATCH;
+        constexpr size_t SCRATCH = gw::HWAudioDevice::Impl::CB_SCRATCH;
         // Per-channel temporaries (Impl-resident, not stack — see #47).
         // Pulling N samples per ring per chunk amortizes the atomic load
         // cost in RingBuffer::read.
@@ -234,7 +234,7 @@ static void audio_callback(::ma_device* pDevice, void* pOutput, const void* pInp
 static void device_notification_callback(
         const ::ma_device_notification* pNotification) {
     if (!pNotification || !pNotification->pDevice) return;
-    auto* impl = static_cast<dsca::HWAudioDevice::Impl*>(
+    auto* impl = static_cast<gw::HWAudioDevice::Impl*>(
         pNotification->pDevice->pUserData);
     if (!impl) return;
     if (pNotification->type == ma_device_notification_type_stopped ||
@@ -243,7 +243,7 @@ static void device_notification_callback(
     }
 }
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // HWAudioDevice Implementation
@@ -441,7 +441,7 @@ bool HWAudioDevice::startMultiChannelPlayback(
 
     // Stash the rings into the Impl so audio_callback can find them.
     size_t n = std::min<size_t>(channel_rings.size(),
-                                 dsca::HWAudioDevice::Impl::MAX_CH_RINGS);
+                                 gw::HWAudioDevice::Impl::MAX_CH_RINGS);
     impl_->ch_rings.fill(nullptr);
     for (size_t i = 0; i < n; ++i) impl_->ch_rings[i] = channel_rings[i];
     impl_->ch_count = n;
@@ -626,6 +626,6 @@ std::vector<uint32_t> HWAudioDevice::supportedSampleRates(
     return result;
 }
 
-} // namespace dsca
+} // namespace gw
 
-#endif // DSCA_ENABLE_AUDIO
+#endif // GW_ENABLE_AUDIO

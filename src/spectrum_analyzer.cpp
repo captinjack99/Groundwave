@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Construction
@@ -205,4 +205,4 @@ void SpectrumAnalyzer::reset() {
     has_new_data_  = false;
 }
 
-} // namespace dsca
+} // namespace gw

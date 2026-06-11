@@ -18,7 +18,7 @@
 #include <mutex>
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 class DataBridge : public QObject {
     Q_OBJECT
@@ -48,8 +48,8 @@ public:
 
 signals:
     // Emitted every poll tick (copies — safe for GUI thread)
-    void statsUpdated(dsca::ModemStats stats);
-    void alarmsUpdated(dsca::AlarmStatus status);
+    void statsUpdated(gw::ModemStats stats);
+    void alarmsUpdated(gw::AlarmStatus status);
     void spectrumReady();        // widgets read directly from state().spectrum
     void constellationReady();   // widgets read directly from state().constellation
     void metersUpdated(float tx_rms_db, float rx_rms_db,
@@ -92,4 +92,4 @@ private:
     std::mutex         diag_mtx_;
 };
 
-} // namespace dsca
+} // namespace gw

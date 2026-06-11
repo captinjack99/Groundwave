@@ -1,0 +1,4 @@
+// Windows executable icon (Explorer, taskbar, Alt-Tab).
+// IDI_ICON1 is the conventional first-icon identifier; the shell uses
+// the lowest-ID icon resource as the file icon.
+IDI_ICON1 ICON "groundwave.ico"

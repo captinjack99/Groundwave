@@ -25,7 +25,7 @@
 #include <vector>
 #include <string>
 
-using namespace dsca;
+using namespace gw;
 
 static int tests_passed = 0;
 static int tests_failed = 0;

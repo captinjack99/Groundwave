@@ -14,7 +14,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace dsca {
+namespace gw {
 
 class PowerRamp {
 public:
@@ -78,4 +78,4 @@ private:
     bool key_target_   = false;
 };
 
-} // namespace dsca
+} // namespace gw

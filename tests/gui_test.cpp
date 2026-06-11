@@ -2,12 +2,12 @@
  * @file gui_test.cpp
  * @brief Phase 4 headless tests — AppState, presets, alarms, spectrum analyzer
  *
- * Compiled with -DDSCA_HEADLESS — no display dependencies required.
+ * Compiled with -DGW_HEADLESS — no display dependencies required.
  * Tests: 10 scored + informational.
  */
 
-#ifndef DSCA_HEADLESS
-#define DSCA_HEADLESS
+#ifndef GW_HEADLESS
+#define GW_HEADLESS
 #endif
 
 #include "app_state.hpp"
@@ -64,15 +64,15 @@ static void test_fail(const char* name, const char* why) {
 // Test 1: AppState default construction
 // =========================================================================
 static void test_appstate_defaults() {
-    dsca::AppState st;
+    gw::AppState st;
 
     // Default preset is "Standard" (slot 1), which sets QPSK
     REQUIRE("T01a: default preset loaded",
             st.active_preset_slot == 1 && !st.preset_modified);
     REQUIRE("T01b: default modulation QPSK",
-            st.ofdm.modulation == dsca::Modulation::QPSK);
+            st.ofdm.modulation == gw::Modulation::QPSK);
     REQUIRE("T01c: 8 presets present",
-            st.presets.size() == dsca::NUM_PRESETS);
+            st.presets.size() == gw::NUM_PRESETS);
     REQUIRE("T01d: presets 0-6 valid",
             st.presets[0].valid && st.presets[6].valid);
     REQUIRE("T01e: preset 7 (Custom) empty",
@@ -87,19 +87,19 @@ static void test_appstate_defaults() {
 // Test 2: Preset load/save/rename cycle
 // =========================================================================
 static void test_preset_cycle() {
-    dsca::AppState st;
+    gw::AppState st;
 
     // Load preset 0 (Robust = BPSK)
     st.applyPreset(0);
     REQUIRE("T02a: apply preset 0",
-            st.ofdm.modulation == dsca::Modulation::BPSK);
+            st.ofdm.modulation == gw::Modulation::BPSK);
     REQUIRE("T02b: active slot = 0",
             st.active_preset_slot == 0);
     REQUIRE("T02c: not modified after fresh load",
             !st.preset_modified);
 
     // Mutate and mark modified
-    st.ofdm.modulation    = dsca::Modulation::QAM64;
+    st.ofdm.modulation    = gw::Modulation::QAM64;
     st.preset_modified    = true;
     REQUIRE("T02d: modified flag set", st.preset_modified);
 
@@ -107,7 +107,7 @@ static void test_preset_cycle() {
     st.saveToPreset(7);
     REQUIRE("T02e: slot 7 now valid",  st.presets[7].valid);
     REQUIRE("T02f: saved modulation",
-            st.presets[7].ofdm.modulation == dsca::Modulation::QAM64);
+            st.presets[7].ofdm.modulation == gw::Modulation::QAM64);
     REQUIRE("T02g: modified cleared",  !st.preset_modified);
 
     // Rename slot 7
@@ -118,22 +118,22 @@ static void test_preset_cycle() {
     // Copy slot 7 → slot 6 and verify
     st.copyPreset(7, 6);
     REQUIRE("T02i: copy slot",
-            st.presets[6].ofdm.modulation == dsca::Modulation::QAM64);
+            st.presets[6].ofdm.modulation == gw::Modulation::QAM64);
 
     // Reset to factory
-    dsca::initFactoryPresets(st.presets);
+    gw::initFactoryPresets(st.presets);
     REQUIRE("T02j: factory reset restores preset 0 as BPSK",
-            st.presets[0].ofdm.modulation == dsca::Modulation::BPSK);
+            st.presets[0].ofdm.modulation == gw::Modulation::BPSK);
 }
 
 // =========================================================================
 // Test 3: ComputedParams accuracy
 // =========================================================================
 static void test_computed_params() {
-    dsca::AppState st;
+    gw::AppState st;
     st.applyPreset(1); // Standard: QPSK 1/2, 256-pt, 48kHz
 
-    dsca::ComputedParams cp = st.computedParams();
+    gw::ComputedParams cp = st.computedParams();
 
     // Subcarrier spacing: 48000 / 256 = 187.5 Hz
     REQUIRE_NEAR("T03a: subcarrier spacing", cp.subcarrier_spacing_hz, 187.5f, 0.1f);
@@ -173,10 +173,10 @@ static void test_computed_params() {
 
     // All 8 presets should compute without throwing
     bool all_ok = true;
-    for (int i = 0; i < static_cast<int>(dsca::NUM_PRESETS); ++i) {
+    for (int i = 0; i < static_cast<int>(gw::NUM_PRESETS); ++i) {
         if (!st.presets[i].valid) continue;
         try {
-            auto c = dsca::ComputedParams::compute(st.presets[i].ofdm,
+            auto c = gw::ComputedParams::compute(st.presets[i].ofdm,
                                                     st.presets[i].frame);
             if (c.data_subcarriers == 0) { all_ok = false; break; }
         } catch (...) { all_ok = false; break; }
@@ -188,7 +188,7 @@ static void test_computed_params() {
 // Test 4: Alarm system transitions
 // =========================================================================
 static void test_alarm_system() {
-    dsca::AppState st;
+    gw::AppState st;
     st.applyPreset(1);
 
     // Initially no alarms
@@ -196,7 +196,7 @@ static void test_alarm_system() {
 
     // Inject low SNR after lock
     st.stats.snr_db      = 2.0f;
-    st.stats.sync_state  = dsca::SyncState::Locked;
+    st.stats.sync_state  = gw::SyncState::Locked;
     st.stats.frames_rx   = 0;  // BER alarm requires >10 frames
     st.alarm_thresh.snr_low_db = 6.0f;
 
@@ -205,7 +205,7 @@ static void test_alarm_system() {
     REQUIRE("T04c: severity >= 1",       st.alarm_status.severity() >= 1);
 
     // Inject sync loss
-    st.stats.sync_state = dsca::SyncState::Lost;
+    st.stats.sync_state = gw::SyncState::Lost;
     st.alarm_thresh.alarm_sync_loss = true;
     st.updateAlarms();
     REQUIRE("T04d: sync lost alarm fires", st.alarm_status.sync_lost);
@@ -228,7 +228,7 @@ static void test_alarm_system() {
 
     // Recovery: SNR back above threshold
     st.stats.snr_db     = 20.0f;
-    st.stats.sync_state = dsca::SyncState::Locked;
+    st.stats.sync_state = gw::SyncState::Locked;
     st.updateAlarms();
     REQUIRE("T04j: SNR alarm clears", !st.alarm_status.snr_low);
 }
@@ -237,7 +237,7 @@ static void test_alarm_system() {
 // Test 5: Level meters
 // =========================================================================
 static void test_level_meters() {
-    dsca::LevelMeter meter;
+    gw::LevelMeter meter;
 
     // Push a level and check normalization
     meter.update(-20.f, 0.016f);
@@ -265,26 +265,26 @@ static void test_level_meters() {
 // Test 6: Constellation data ring buffer
 // =========================================================================
 static void test_constellation_buffer() {
-    dsca::ConstellationData cd;
+    gw::ConstellationData cd;
     REQUIRE("T06a: starts empty", cd.count() == 0 && !cd.full);
 
     // Push CONSTELLATION_MAX + 1 samples
-    for (size_t i = 0; i < dsca::CONSTELLATION_MAX + 100; ++i) {
+    for (size_t i = 0; i < gw::CONSTELLATION_MAX + 100; ++i) {
         cd.push(static_cast<float>(i) * 0.001f,
                 static_cast<float>(i) * -0.001f);
     }
     REQUIRE("T06b: full after overflow", cd.full);
     REQUIRE("T06c: count == max after overflow",
-            cd.count() == dsca::CONSTELLATION_MAX);
+            cd.count() == gw::CONSTELLATION_MAX);
 
     // Clear
     cd.clear();
     REQUIRE("T06d: cleared", cd.count() == 0 && !cd.full);
 
     // Push via ComplexBuf
-    dsca::ComplexBuf buf(50);
+    gw::ComplexBuf buf(50);
     for (size_t i = 0; i < 50; ++i)
-        buf[i] = dsca::ComplexSample(static_cast<float>(i) * 0.01f, 0.f);
+        buf[i] = gw::ComplexSample(static_cast<float>(i) * 0.01f, 0.f);
     cd.push(buf);
     REQUIRE("T06e: bulk push", cd.count() == 50);
 }
@@ -293,13 +293,13 @@ static void test_constellation_buffer() {
 // Test 7: SpectrumAnalyzer — frequency axis and bin mapping
 // =========================================================================
 static void test_spectrum_freq_axis() {
-    dsca::SpectrumConfig cfg;
+    gw::SpectrumConfig cfg;
     cfg.fft_size    = 128;
     cfg.sample_rate = 48000.f;
     cfg.avg_leak    = 0.f; // instant
 
-    dsca::SpectrumAnalyzer sa(cfg);
-    dsca::SpectrumData sd;
+    gw::SpectrumAnalyzer sa(cfg);
+    gw::SpectrumData sd;
     sd.initFreqs(cfg.sample_rate);
 
     // Push silence
@@ -313,28 +313,28 @@ static void test_spectrum_freq_axis() {
     REQUIRE("T07b: freq[0] is near 0",
             sd.freqs_hz[0] < 100.f);
     REQUIRE("T07c: freq[-1] is near Nyquist",
-            sd.freqs_hz[dsca::SPECTRUM_BINS - 1] <
+            sd.freqs_hz[gw::SPECTRUM_BINS - 1] <
             cfg.sample_rate / 2.f + 100.f);
     REQUIRE("T07d: freqs monotonically increasing",
             sd.freqs_hz[1] > sd.freqs_hz[0]);
 
     // Silence → very low power
     REQUIRE("T07e: silence gives low power",
-            sd.power_db[dsca::SPECTRUM_BINS / 2] < -60.f);
+            sd.power_db[gw::SPECTRUM_BINS / 2] < -60.f);
 }
 
 // =========================================================================
 // Test 8: SpectrumAnalyzer — tone detection
 // =========================================================================
 static void test_spectrum_tone() {
-    dsca::SpectrumConfig cfg;
+    gw::SpectrumConfig cfg;
     cfg.fft_size    = 512;
     cfg.sample_rate = 48000.f;
     cfg.avg_leak    = 0.f;
     cfg.complex_input = false;
 
-    dsca::SpectrumAnalyzer sa(cfg);
-    dsca::SpectrumData sd;
+    gw::SpectrumAnalyzer sa(cfg);
+    gw::SpectrumData sd;
     sd.initFreqs(cfg.sample_rate);
 
     // Generate a 12 kHz tone at full scale
@@ -351,7 +351,7 @@ static void test_spectrum_tone() {
     // Peak should be near 12 kHz bin
     float peak_db = -120.f;
     size_t peak_bin = 0;
-    for (size_t i = 0; i < dsca::SPECTRUM_BINS; ++i) {
+    for (size_t i = 0; i < gw::SPECTRUM_BINS; ++i) {
         if (sd.power_db[i] > peak_db) {
             peak_db = sd.power_db[i];
             peak_bin = i;
@@ -372,7 +372,7 @@ static void test_spectrum_tone() {
 // Test 9: AlarmThresholds — BER log scale
 // =========================================================================
 static void test_alarm_thresholds() {
-    dsca::AppState st;
+    gw::AppState st;
 
     // BER threshold default
     REQUIRE_NEAR("T09a: BER default threshold",
@@ -381,7 +381,7 @@ static void test_alarm_thresholds() {
     // Inject BER just above threshold (need >10 frames for BER alarm)
     st.stats.ber_estimate = 5e-3f;
     st.stats.frames_rx    = 20;
-    st.stats.sync_state   = dsca::SyncState::Locked;
+    st.stats.sync_state   = gw::SyncState::Locked;
     st.stats.snr_db       = 20.f;  // SNR OK
     st.updateAlarms();
     REQUIRE("T09b: BER high fires when above threshold",
@@ -408,12 +408,12 @@ static void test_alarm_thresholds() {
 // Test 10: AppState thread safety (mutex)
 // =========================================================================
 static void test_thread_safety() {
-    dsca::AppState st;
+    gw::AppState st;
     constexpr int N = 500;
     bool error = false;
 
     std::thread writer([&]() {
-        dsca::ModemStats ms;
+        gw::ModemStats ms;
         for (int i = 0; i < N; ++i) {
             ms.snr_db      = static_cast<float>(i % 40);
             ms.frames_rx   = static_cast<uint64_t>(i);
@@ -424,7 +424,7 @@ static void test_thread_safety() {
 
     std::thread reader([&]() {
         for (int i = 0; i < N; ++i) {
-            dsca::ModemStats ms = st.getStats();
+            gw::ModemStats ms = st.getStats();
             // snr should always be in valid range
             if (ms.snr_db < 0.f || ms.snr_db > 40.f) { error = true; break; }
         }
@@ -436,10 +436,10 @@ static void test_thread_safety() {
 
     // Constellation push from simulated DSP thread
     std::thread dsp([&]() {
-        dsca::ComplexBuf buf(32);
+        gw::ComplexBuf buf(32);
         for (int i = 0; i < 100; ++i) {
             for (auto& s : buf)
-                s = dsca::ComplexSample(0.5f, 0.5f);
+                s = gw::ComplexSample(0.5f, 0.5f);
             st.pushConstellationSamples(buf);
         }
     });
@@ -452,20 +452,20 @@ static void test_thread_safety() {
 // Informational: print all preset parameters
 // =========================================================================
 static void print_preset_info() {
-    dsca::AppState st;
+    gw::AppState st;
     std::printf("\n--- Preset Summary ---\n");
     std::printf("%-4s %-20s %-10s %-8s %-8s %s\n",
                 "Slot","Name","Mod","FEC","SR","Net kbps");
     std::printf("%-4s %-20s %-10s %-8s %-8s %s\n",
                 "----","----","---","---","--","--------");
 
-    for (size_t i = 0; i < dsca::NUM_PRESETS; ++i) {
+    for (size_t i = 0; i < gw::NUM_PRESETS; ++i) {
         const auto& p = st.presets[i];
         if (!p.valid) {
             std::printf("%-4zu %-20s  (empty)\n", i, p.name);
             continue;
         }
-        auto cp = dsca::ComputedParams::compute(p.ofdm, p.frame);
+        auto cp = gw::ComputedParams::compute(p.ofdm, p.frame);
         static const char* mods[] =
             {"BPSK","QPSK","QAM16","QAM64","QAM256","QAM1024","QAM4096"};
         static const char* fecs[] =
@@ -487,7 +487,7 @@ static void print_preset_info() {
 // =========================================================================
 
 static void test_json_roundtrip() {
-    dsca::AppState orig;
+    gw::AppState orig;
     // Customize some values
     orig.applyPreset(3); // High Capacity
     orig.tx_enabled  = true;
@@ -497,8 +497,8 @@ static void test_json_roundtrip() {
     orig.presets[7].setName("MyCustom");
     orig.presets[7].valid = true;
     orig.presets[7].ofdm.fft_size = 512;
-    orig.presets[7].ofdm.modulation = dsca::Modulation::QAM256;
-    orig.presets[7].frame.fec_rate = dsca::FECRate::Rate_5_6;
+    orig.presets[7].ofdm.modulation = gw::Modulation::QAM256;
+    orig.presets[7].frame.fec_rate = gw::FECRate::Rate_5_6;
 
     // Customize stream 2 with non-default values so we can verify the
     // per-stream fields round-trip through JSON.
@@ -508,7 +508,7 @@ static void test_json_roundtrip() {
     orig.stream_configs[2].channels       = 2;
     orig.stream_configs[2].frame_ms       = 40;
     orig.stream_configs[2].sample_rate    = 48000;
-    orig.stream_configs[2].source         = dsca::StreamAudioSource::File;
+    orig.stream_configs[2].source         = gw::StreamAudioSource::File;
     orig.stream_configs[2].tone_freq_hz   = 1234.5f;
     orig.stream_configs[2].tone_amplitude = 0.42f;
     std::strncpy(orig.stream_configs[2].name, "Talkback",
@@ -517,14 +517,14 @@ static void test_json_roundtrip() {
                  sizeof(orig.stream_configs[2].file_path) - 1);
 
     // Serialize
-    std::string json = dsca::serializeConfig(orig);
+    std::string json = gw::serializeConfig(orig);
     REQUIRE("json_not_empty", !json.empty());
     REQUIRE("json_has_version", json.find("\"version\"") != std::string::npos);
     REQUIRE("json_has_presets", json.find("\"presets\"") != std::string::npos);
 
     // Deserialize
-    dsca::AppState loaded;
-    bool ok = dsca::deserializeConfig(json, loaded);
+    gw::AppState loaded;
+    bool ok = gw::deserializeConfig(json, loaded);
     REQUIRE("json_parse_ok", ok);
 
     // Verify round-trip
@@ -543,9 +543,9 @@ static void test_json_roundtrip() {
             std::string(loaded.presets[7].name) == "MyCustom");
     REQUIRE("json_rt_custom_fft",    loaded.presets[7].ofdm.fft_size == 512);
     REQUIRE("json_rt_custom_mod",
-            loaded.presets[7].ofdm.modulation == dsca::Modulation::QAM256);
+            loaded.presets[7].ofdm.modulation == gw::Modulation::QAM256);
     REQUIRE("json_rt_custom_fec",
-            loaded.presets[7].frame.fec_rate == dsca::FECRate::Rate_5_6);
+            loaded.presets[7].frame.fec_rate == gw::FECRate::Rate_5_6);
 
     // Verify stream 2 round-trip.
     REQUIRE("json_rt_stream_enabled",
@@ -559,7 +559,7 @@ static void test_json_roundtrip() {
     REQUIRE("json_rt_stream_frame_ms",
             loaded.stream_configs[2].frame_ms == 40);
     REQUIRE("json_rt_stream_source_file",
-            loaded.stream_configs[2].source == dsca::StreamAudioSource::File);
+            loaded.stream_configs[2].source == gw::StreamAudioSource::File);
     REQUIRE_NEAR("json_rt_stream_tone_hz",
                  loaded.stream_configs[2].tone_freq_hz, 1234.5f, 0.01f);
     REQUIRE_NEAR("json_rt_stream_tone_amp",
@@ -576,18 +576,18 @@ static void test_json_roundtrip() {
 }
 
 static void test_json_file_io() {
-    dsca::AppState state;
+    gw::AppState state;
     state.applyPreset(2); // HD Audio
     state.tx_gain_db = -3.0f;
 
     // Save to temp file (cross-platform: use current dir, not /tmp/)
-    std::string path = "dsca_test_config_tmp.json";
-    bool saved = dsca::saveConfigToFile(state, path);
+    std::string path = "gw_test_config_tmp.json";
+    bool saved = gw::saveConfigToFile(state, path);
     REQUIRE("json_file_save", saved);
 
     // Load back
-    dsca::AppState loaded;
-    bool loadok = dsca::loadConfigFromFile(path, loaded);
+    gw::AppState loaded;
+    bool loadok = gw::loadConfigFromFile(path, loaded);
     REQUIRE("json_file_load", loadok);
     REQUIRE("json_file_fft",  loaded.ofdm.fft_size == state.ofdm.fft_size);
     REQUIRE_NEAR("json_file_gain", loaded.tx_gain_db, -3.0f, 0.01f);
@@ -597,15 +597,15 @@ static void test_json_file_io() {
 }
 
 static void test_json_bad_input() {
-    dsca::AppState state;
+    gw::AppState state;
     // Empty string
-    bool ok = dsca::deserializeConfig("", state);
+    bool ok = gw::deserializeConfig("", state);
     REQUIRE("json_bad_empty", !ok);
     // Not JSON
-    ok = dsca::deserializeConfig("this is not json", state);
+    ok = gw::deserializeConfig("this is not json", state);
     REQUIRE("json_bad_notjson", !ok);
     // Wrong version
-    ok = dsca::deserializeConfig("{\"version\":99}", state);
+    ok = gw::deserializeConfig("{\"version\":99}", state);
     REQUIRE("json_bad_version", !ok);
 }
 
@@ -615,7 +615,7 @@ static void test_json_bad_input() {
 
 static void test_pwl_llr_qam16() {
     // Compare PWL LLR to exact max-log-MAP for QAM16
-    dsca::SymbolMapper sm(dsca::Modulation::QAM16);
+    gw::SymbolMapper sm(gw::Modulation::QAM16);
     float noise_var = 0.1f;
 
     // Test on all constellation points + some noisy ones
@@ -640,7 +640,7 @@ static void test_pwl_llr_qam16() {
 }
 
 static void test_pwl_llr_qam64() {
-    dsca::SymbolMapper sm(dsca::Modulation::QAM64);
+    gw::SymbolMapper sm(gw::Modulation::QAM64);
     float noise_var = 0.05f;
 
     // Test sign agreement (most important for FEC)
@@ -666,16 +666,16 @@ static void test_pwl_llr_bpsk_qpsk() {
     float noise_var = 0.2f;
 
     {
-        dsca::SymbolMapper sm(dsca::Modulation::BPSK);
-        dsca::ComplexSample s(0.7f, 0.1f);
+        gw::SymbolMapper sm(gw::Modulation::BPSK);
+        gw::ComplexSample s(0.7f, 0.1f);
         std::vector<float> exact, pwl;
         sm.demapSoft(s, noise_var, exact);
         sm.demapSoftPWL(s, noise_var, pwl);
         REQUIRE_NEAR("pwl_bpsk_identical", exact[0], pwl[0], 1e-6f);
     }
     {
-        dsca::SymbolMapper sm(dsca::Modulation::QPSK);
-        dsca::ComplexSample s(0.5f, -0.3f);
+        gw::SymbolMapper sm(gw::Modulation::QPSK);
+        gw::ComplexSample s(0.5f, -0.3f);
         std::vector<float> exact, pwl;
         sm.demapSoft(s, noise_var, exact);
         sm.demapSoftPWL(s, noise_var, pwl);
@@ -689,17 +689,17 @@ static void test_pwl_llr_bpsk_qpsk() {
 // =========================================================================
 
 static void test_mmse_construction() {
-    dsca::OFDMParams p;
+    gw::OFDMParams p;
     p.fft_size   = 256;
-    p.modulation = dsca::Modulation::QAM16;
-    auto alloc = dsca::computeAllocation(p);
+    p.modulation = gw::Modulation::QAM16;
+    auto alloc = gw::computeAllocation(p);
 
-    dsca::MMSEConfig cfg;
+    gw::MMSEConfig cfg;
     cfg.tau_rms_us   = 5.0f;
     cfg.pilot_snr_db = 20.0f;
     cfg.interp_order = 4;
 
-    dsca::MMSEChannelEstimator est(
+    gw::MMSEChannelEstimator est(
         p.fft_size,
         alloc.pilot_indices,
         alloc.data_indices,
@@ -714,21 +714,21 @@ static void test_mmse_construction() {
 
 static void test_mmse_flat_channel() {
     // On flat channel, MMSE should converge to approximately H=1
-    dsca::OFDMParams p;
+    gw::OFDMParams p;
     p.fft_size = 256;
-    p.modulation = dsca::Modulation::QAM16;
-    auto alloc = dsca::computeAllocation(p);
+    p.modulation = gw::Modulation::QAM16;
+    auto alloc = gw::computeAllocation(p);
 
-    dsca::MMSEConfig cfg;
+    gw::MMSEConfig cfg;
     cfg.smoothing = 0.0f; // no temporal smoothing for this test
 
-    dsca::MMSEChannelEstimator est(
+    gw::MMSEChannelEstimator est(
         p.fft_size, alloc.pilot_indices, alloc.data_indices,
         alloc.pilot_values, p.sample_rate, cfg);
 
     // Create flat channel h1 = h2 = 1.0 at all bins
-    dsca::ComplexBuf h1(p.fft_size, dsca::ComplexSample(1.0f, 0.0f));
-    dsca::ComplexBuf h2(p.fft_size, dsca::ComplexSample(1.0f, 0.0f));
+    gw::ComplexBuf h1(p.fft_size, gw::ComplexSample(1.0f, 0.0f));
+    gw::ComplexBuf h2(p.fft_size, gw::ComplexSample(1.0f, 0.0f));
 
     est.initFromPreamble(h1, h2);
 
@@ -736,7 +736,7 @@ static void test_mmse_flat_channel() {
     float max_err = 0.f;
     for (size_t i = 0; i < alloc.data_indices.size(); ++i) {
         size_t idx = alloc.data_indices[i];
-        float err = std::abs(est.estimate()[idx] - dsca::ComplexSample(1.0f, 0.0f));
+        float err = std::abs(est.estimate()[idx] - gw::ComplexSample(1.0f, 0.0f));
         max_err = std::max(max_err, err);
     }
 
@@ -746,11 +746,11 @@ static void test_mmse_flat_channel() {
 
 static void test_mmse_integration() {
     // Test MMSE enable/disable on OFDMDemodulator
-    dsca::OFDMParams p;
+    gw::OFDMParams p;
     p.fft_size = 256;
-    p.modulation = dsca::Modulation::QPSK;
+    p.modulation = gw::Modulation::QPSK;
 
-    dsca::OFDMDemodulator demod(p);
+    gw::OFDMDemodulator demod(p);
     REQUIRE("mmse_initially_off", !demod.isMMSEEnabled());
 
     demod.enableMMSE();
@@ -765,18 +765,18 @@ static void test_mmse_integration() {
 // =========================================================================
 
 static void test_papr_construction() {
-    dsca::OFDMParams p;
+    gw::OFDMParams p;
     p.fft_size = 256;
-    p.modulation = dsca::Modulation::QAM16;
+    p.modulation = gw::Modulation::QAM16;
 
-    auto alloc = dsca::computeAllocation(p);
+    auto alloc = gw::computeAllocation(p);
 
-    dsca::PAPRConfig cfg;
+    gw::PAPRConfig cfg;
     cfg.enabled = true;
     cfg.target_papr_db = 7.0f;
     cfg.reserve_fraction = 0.05f;
 
-    dsca::PAPRReducer reducer(p.fft_size,
+    gw::PAPRReducer reducer(p.fft_size,
                               p.guardLeft(), p.fft_size - p.guardRight(),
                               alloc.data_indices, alloc.pilot_indices, cfg);
 
@@ -788,26 +788,26 @@ static void test_papr_construction() {
 
 static void test_papr_reduction() {
     // Build a modulator, generate a symbol, and verify PAPR is reduced
-    dsca::OFDMParams p;
+    gw::OFDMParams p;
     p.fft_size = 256;
-    p.modulation = dsca::Modulation::QAM64;
+    p.modulation = gw::Modulation::QAM64;
 
-    auto alloc = dsca::computeAllocation(p);
+    auto alloc = gw::computeAllocation(p);
 
-    dsca::PAPRConfig cfg;
+    gw::PAPRConfig cfg;
     cfg.enabled = true;
     cfg.target_papr_db = 7.0f;
     cfg.max_iterations = 10;
     cfg.step_size = 0.8f;
     cfg.reserve_fraction = 0.08f;
 
-    dsca::PAPRReducer reducer(p.fft_size,
+    gw::PAPRReducer reducer(p.fft_size,
                               p.guardLeft(), p.fft_size - p.guardRight(),
                               alloc.data_indices, alloc.pilot_indices, cfg);
 
     // Create a frequency-domain symbol with random data
-    dsca::ComplexBuf freq(p.fft_size, dsca::ComplexSample(0.f, 0.f));
-    dsca::SymbolMapper mapper(p.modulation);
+    gw::ComplexBuf freq(p.fft_size, gw::ComplexSample(0.f, 0.f));
+    gw::SymbolMapper mapper(p.modulation);
 
     // Fill data subcarriers with mapped symbols
     uint32_t seed = 42;
@@ -816,14 +816,14 @@ static void test_papr_reduction() {
         float i_val = (static_cast<float>((seed >> 16) & 0xFF) / 128.f) - 1.f;
         seed = seed * 1103515245u + 12345u;
         float q_val = (static_cast<float>((seed >> 16) & 0xFF) / 128.f) - 1.f;
-        freq[idx] = dsca::ComplexSample(i_val, q_val);
+        freq[idx] = gw::ComplexSample(i_val, q_val);
     }
     // Fill pilots
     for (size_t i = 0; i < alloc.pilotCount(); ++i) {
         freq[alloc.pilot_indices[i]] = alloc.pilot_values[i];
     }
 
-    dsca::FFTEngine fft(p.fft_size);
+    gw::FFTEngine fft(p.fft_size);
     auto stats = reducer.reduce(freq, fft);
 
     // PAPR should be reduced (or at least not increased by more than 1 dB)
@@ -835,25 +835,25 @@ static void test_papr_reduction() {
 }
 
 static void test_papr_disabled() {
-    dsca::OFDMParams p;
+    gw::OFDMParams p;
     p.fft_size = 128;
-    p.modulation = dsca::Modulation::QPSK;
+    p.modulation = gw::Modulation::QPSK;
 
-    auto alloc = dsca::computeAllocation(p);
+    auto alloc = gw::computeAllocation(p);
 
-    dsca::PAPRConfig cfg;
+    gw::PAPRConfig cfg;
     cfg.enabled = false; // Disabled
 
-    dsca::PAPRReducer reducer(p.fft_size,
+    gw::PAPRReducer reducer(p.fft_size,
                               p.guardLeft(), p.fft_size - p.guardRight(),
                               alloc.data_indices, alloc.pilot_indices, cfg);
 
-    dsca::ComplexBuf freq(p.fft_size, dsca::ComplexSample(0.f, 0.f));
+    gw::ComplexBuf freq(p.fft_size, gw::ComplexSample(0.f, 0.f));
     for (auto idx : alloc.data_indices) {
-        freq[idx] = dsca::ComplexSample(1.f, 0.f);
+        freq[idx] = gw::ComplexSample(1.f, 0.f);
     }
 
-    dsca::FFTEngine fft(p.fft_size);
+    gw::FFTEngine fft(p.fft_size);
     auto stats = reducer.reduce(freq, fft);
 
     REQUIRE("papr_disabled_no_iter", stats.iterations_used == 0);
@@ -863,14 +863,14 @@ static void test_papr_disabled() {
 
 static void test_papr_compute_static() {
     // Constant amplitude signal → PAPR = 0 dB
-    dsca::ComplexBuf td(64, dsca::ComplexSample(1.0f, 0.0f));
-    float papr = dsca::PAPRReducer::computePAPR(td);
+    gw::ComplexBuf td(64, gw::ComplexSample(1.0f, 0.0f));
+    float papr = gw::PAPRReducer::computePAPR(td);
     REQUIRE_NEAR("papr_flat_0db", papr, 0.0f, 0.01f);
 
     // Single non-zero sample → PAPR = 10*log10(N) dB
-    dsca::ComplexBuf spike(64, dsca::ComplexSample(0.0f, 0.0f));
-    spike[0] = dsca::ComplexSample(1.0f, 0.0f);
-    float papr_spike = dsca::PAPRReducer::computePAPR(spike);
+    gw::ComplexBuf spike(64, gw::ComplexSample(0.0f, 0.0f));
+    spike[0] = gw::ComplexSample(1.0f, 0.0f);
+    float papr_spike = gw::PAPRReducer::computePAPR(spike);
     float expected = 10.f * std::log10(64.f);
     REQUIRE_NEAR("papr_spike", papr_spike, expected, 0.1f);
 }
@@ -880,12 +880,12 @@ static void test_papr_compute_static() {
 // =========================================================================
 
 static void test_hier_construction() {
-    dsca::HierarchicalConfig cfg;
-    cfg.mode = dsca::HierarchicalMode::QPSK_QAM16;
+    gw::HierarchicalConfig cfg;
+    cfg.mode = gw::HierarchicalMode::QPSK_QAM16;
     cfg.alpha = 2.0f;
     cfg.enabled = true;
 
-    dsca::HierarchicalMapper mapper(cfg);
+    gw::HierarchicalMapper mapper(cfg);
 
     REQUIRE("hier_enabled", mapper.isEnabled());
     REQUIRE("hier_hp_bps", mapper.hpBPS() == 2);
@@ -895,19 +895,19 @@ static void test_hier_construction() {
 
 static void test_hier_map_demap_hp() {
     // Map HP+LP, then demap HP — should recover HP bits perfectly (no noise)
-    dsca::HierarchicalConfig cfg;
-    cfg.mode = dsca::HierarchicalMode::QPSK_QAM16;
+    gw::HierarchicalConfig cfg;
+    cfg.mode = gw::HierarchicalMode::QPSK_QAM16;
     cfg.alpha = 2.0f;
     cfg.enabled = true;
 
-    dsca::HierarchicalMapper mapper(cfg);
+    gw::HierarchicalMapper mapper(cfg);
 
     // HP: 2 bits per symbol, LP: 2 bits per symbol
     // Generate 4 symbols → 8 HP bits (1 byte), 8 LP bits (1 byte)
     uint8_t hp_data[] = { 0b11001010 };  // 4 symbols: 11, 00, 10, 10
     uint8_t lp_data[] = { 0b01110001 };  // 4 symbols: 01, 11, 00, 01
 
-    dsca::ComplexBuf symbols;
+    gw::ComplexBuf symbols;
     mapper.map(hp_data, 8, lp_data, 8, symbols);
     REQUIRE("hier_map_count", symbols.size() == 4);
 
@@ -919,17 +919,17 @@ static void test_hier_map_demap_hp() {
 }
 
 static void test_hier_map_demap_lp() {
-    dsca::HierarchicalConfig cfg;
-    cfg.mode = dsca::HierarchicalMode::QPSK_QAM16;
+    gw::HierarchicalConfig cfg;
+    cfg.mode = gw::HierarchicalMode::QPSK_QAM16;
     cfg.alpha = 2.0f;
     cfg.enabled = true;
 
-    dsca::HierarchicalMapper mapper(cfg);
+    gw::HierarchicalMapper mapper(cfg);
 
     uint8_t hp_data[] = { 0b11001010 };
     uint8_t lp_data[] = { 0b01110001 };
 
-    dsca::ComplexBuf symbols;
+    gw::ComplexBuf symbols;
     mapper.map(hp_data, 8, lp_data, 8, symbols);
 
     // Demap LP (should match lp_data at noiseless)
@@ -940,17 +940,17 @@ static void test_hier_map_demap_lp() {
 }
 
 static void test_hier_soft_demap() {
-    dsca::HierarchicalConfig cfg;
-    cfg.mode = dsca::HierarchicalMode::QPSK_QAM16;
+    gw::HierarchicalConfig cfg;
+    cfg.mode = gw::HierarchicalMode::QPSK_QAM16;
     cfg.alpha = 2.0f;
     cfg.enabled = true;
 
-    dsca::HierarchicalMapper mapper(cfg);
+    gw::HierarchicalMapper mapper(cfg);
 
     uint8_t hp_data[] = { 0b11000000 };
     uint8_t lp_data[] = { 0b01000000 };
 
-    dsca::ComplexBuf symbols;
+    gw::ComplexBuf symbols;
     mapper.map(hp_data, 4, lp_data, 4, symbols);  // 2 symbols
 
     // Soft demap HP
@@ -972,22 +972,22 @@ static void test_hier_soft_demap() {
 static void test_hier_alpha_effect() {
     // Higher alpha → HP quadrants more separated → easier HP decode
     // Verify that constellation points move with alpha
-    dsca::HierarchicalConfig cfg1;
-    cfg1.mode = dsca::HierarchicalMode::QPSK_QAM16;
+    gw::HierarchicalConfig cfg1;
+    cfg1.mode = gw::HierarchicalMode::QPSK_QAM16;
     cfg1.alpha = 1.0f;  // Uniform 16-QAM
     cfg1.enabled = true;
-    dsca::HierarchicalMapper m1(cfg1);
+    gw::HierarchicalMapper m1(cfg1);
 
-    dsca::HierarchicalConfig cfg2;
-    cfg2.mode = dsca::HierarchicalMode::QPSK_QAM16;
+    gw::HierarchicalConfig cfg2;
+    cfg2.mode = gw::HierarchicalMode::QPSK_QAM16;
     cfg2.alpha = 4.0f;  // Very separated quadrants
     cfg2.enabled = true;
-    dsca::HierarchicalMapper m2(cfg2);
+    gw::HierarchicalMapper m2(cfg2);
 
     uint8_t hp[] = { 0b11000000 }; // HP=11 (one symbol)
     uint8_t lp[] = { 0b00000000 }; // LP=00
 
-    dsca::ComplexBuf s1, s2;
+    gw::ComplexBuf s1, s2;
     m1.map(hp, 2, lp, 2, s1);
     m2.map(hp, 2, lp, 2, s2);
 
@@ -1000,12 +1000,12 @@ static void test_hier_alpha_effect() {
 
 static void test_hier_qpsk_qam64() {
     // Test the QPSK/QAM64 mode (HP: 2 bits, LP: 4 bits = 6 total)
-    dsca::HierarchicalConfig cfg;
-    cfg.mode = dsca::HierarchicalMode::QPSK_QAM64;
+    gw::HierarchicalConfig cfg;
+    cfg.mode = gw::HierarchicalMode::QPSK_QAM64;
     cfg.alpha = 2.0f;
     cfg.enabled = true;
 
-    dsca::HierarchicalMapper mapper(cfg);
+    gw::HierarchicalMapper mapper(cfg);
     REQUIRE("hier64_hp_bps", mapper.hpBPS() == 2);
     REQUIRE("hier64_lp_bps", mapper.lpBPS() == 4);
     REQUIRE("hier64_total", mapper.totalBPS() == 6);
@@ -1014,7 +1014,7 @@ static void test_hier_qpsk_qam64() {
     uint8_t hp_data[] = { 0b10000000 }; // 1 symbol: HP=10
     uint8_t lp_data[] = { 0b01010000 }; // 1 symbol: LP=0101
 
-    dsca::ComplexBuf symbols;
+    gw::ComplexBuf symbols;
     mapper.map(hp_data, 2, lp_data, 4, symbols);
     REQUIRE("hier64_map_count", symbols.size() == 1);
 
@@ -1031,25 +1031,25 @@ static void test_hier_qpsk_qam64() {
 // =========================================================================
 
 static void test_pls_encode_decode() {
-    dsca::PLSBlock tx_pls;
-    tx_pls.modulation = dsca::Modulation::QAM64;
-    tx_pls.fec_rate   = dsca::FECRate::Rate_3_4;
+    gw::PLSBlock tx_pls;
+    tx_pls.modulation = gw::Modulation::QAM64;
+    tx_pls.fec_rate   = gw::FECRate::Rate_3_4;
     tx_pls.vcm_active = true;
     tx_pls.vcm_slot   = 3;
     tx_pls.vcm_total  = 8;
 
     std::vector<uint8_t> encoded;
-    dsca::encodePLS(tx_pls, encoded);
+    gw::encodePLS(tx_pls, encoded);
     REQUIRE("pls_encode_size", encoded.size() == 8);
 
-    dsca::PLSBlock rx_pls;
-    bool ok = dsca::decodePLS(encoded, rx_pls);
+    gw::PLSBlock rx_pls;
+    bool ok = gw::decodePLS(encoded, rx_pls);
     REQUIRE("pls_decode_ok", ok);
     REQUIRE("pls_decode_valid", rx_pls.valid);
     REQUIRE("pls_mod_match",
-            rx_pls.modulation == dsca::Modulation::QAM64);
+            rx_pls.modulation == gw::Modulation::QAM64);
     REQUIRE("pls_fec_match",
-            rx_pls.fec_rate == dsca::FECRate::Rate_3_4);
+            rx_pls.fec_rate == gw::FECRate::Rate_3_4);
     REQUIRE("pls_vcm_active", rx_pls.vcm_active == true);
     REQUIRE("pls_vcm_slot", rx_pls.vcm_slot == 3);
     REQUIRE("pls_vcm_total", rx_pls.vcm_total == 8);
@@ -1057,23 +1057,23 @@ static void test_pls_encode_decode() {
 
 static void test_pls_all_modcods() {
     // Test every modulation + a selection of FEC rates
-    dsca::Modulation mods[] = {
-        dsca::Modulation::BPSK, dsca::Modulation::QPSK,
-        dsca::Modulation::QAM16, dsca::Modulation::QAM64,
-        dsca::Modulation::QAM256, dsca::Modulation::QAM1024,
-        dsca::Modulation::QAM4096
+    gw::Modulation mods[] = {
+        gw::Modulation::BPSK, gw::Modulation::QPSK,
+        gw::Modulation::QAM16, gw::Modulation::QAM64,
+        gw::Modulation::QAM256, gw::Modulation::QAM1024,
+        gw::Modulation::QAM4096
     };
-    dsca::FECRate rates[] = {
-        dsca::FECRate::Rate_1_4, dsca::FECRate::Rate_1_2,
-        dsca::FECRate::Rate_3_4, dsca::FECRate::Rate_5_6,
-        dsca::FECRate::Rate_9_10
+    gw::FECRate rates[] = {
+        gw::FECRate::Rate_1_4, gw::FECRate::Rate_1_2,
+        gw::FECRate::Rate_3_4, gw::FECRate::Rate_5_6,
+        gw::FECRate::Rate_9_10
     };
 
     int ok_count = 0;
     int total = 0;
     for (auto m : mods) {
         for (auto r : rates) {
-            dsca::PLSBlock tx;
+            gw::PLSBlock tx;
             tx.modulation = m;
             tx.fec_rate = r;
             tx.vcm_active = false;
@@ -1081,10 +1081,10 @@ static void test_pls_all_modcods() {
             tx.vcm_total = 1;
 
             std::vector<uint8_t> enc;
-            dsca::encodePLS(tx, enc);
+            gw::encodePLS(tx, enc);
 
-            dsca::PLSBlock rx;
-            if (dsca::decodePLS(enc, rx) &&
+            gw::PLSBlock rx;
+            if (gw::decodePLS(enc, rx) &&
                 rx.modulation == m && rx.fec_rate == r) {
                 ++ok_count;
             }
@@ -1096,31 +1096,31 @@ static void test_pls_all_modcods() {
 
 static void test_pls_corrupt_recovery() {
     // Corrupt first copy, verify second copy recovers
-    dsca::PLSBlock tx;
-    tx.modulation = dsca::Modulation::QAM16;
-    tx.fec_rate   = dsca::FECRate::Rate_2_3;
+    gw::PLSBlock tx;
+    tx.modulation = gw::Modulation::QAM16;
+    tx.fec_rate   = gw::FECRate::Rate_2_3;
     tx.vcm_active = false;
     tx.vcm_slot = 0;
     tx.vcm_total = 1;
 
     std::vector<uint8_t> enc;
-    dsca::encodePLS(tx, enc);
+    gw::encodePLS(tx, enc);
 
     // Corrupt first 4 bytes (first copy)
     enc[0] ^= 0xFF;
     enc[1] ^= 0xFF;
 
-    dsca::PLSBlock rx;
-    bool ok = dsca::decodePLS(enc, rx);
+    gw::PLSBlock rx;
+    bool ok = gw::decodePLS(enc, rx);
     REQUIRE("pls_corrupt_recover", ok);
-    REQUIRE("pls_corrupt_mod", rx.modulation == dsca::Modulation::QAM16);
-    REQUIRE("pls_corrupt_fec", rx.fec_rate == dsca::FECRate::Rate_2_3);
+    REQUIRE("pls_corrupt_mod", rx.modulation == gw::Modulation::QAM16);
+    REQUIRE("pls_corrupt_fec", rx.fec_rate == gw::FECRate::Rate_2_3);
 }
 
 static void test_vcm_schedule() {
-    auto sched = dsca::createStereoVCM(
-        dsca::Modulation::QPSK, dsca::FECRate::Rate_1_2,
-        dsca::Modulation::QAM64, dsca::FECRate::Rate_3_4,
+    auto sched = gw::createStereoVCM(
+        gw::Modulation::QPSK, gw::FECRate::Rate_1_2,
+        gw::Modulation::QAM64, gw::FECRate::Rate_3_4,
         2, 2);
 
     REQUIRE("vcm_enabled", sched.enabled);
@@ -1128,54 +1128,54 @@ static void test_vcm_schedule() {
 
     // Slot 0,1 should be robust
     REQUIRE("vcm_slot0_mod",
-            sched.entries[0].modulation == dsca::Modulation::QPSK);
+            sched.entries[0].modulation == gw::Modulation::QPSK);
     REQUIRE("vcm_slot0_plp", sched.entries[0].plp_id == 0);
 
     // Slot 2,3 should be enhancement
     REQUIRE("vcm_slot2_mod",
-            sched.entries[2].modulation == dsca::Modulation::QAM64);
+            sched.entries[2].modulation == gw::Modulation::QAM64);
     REQUIRE("vcm_slot2_plp", sched.entries[2].plp_id == 1);
 
     // PLS for frame cycling
     auto pls0 = sched.plsForFrame(0);
     REQUIRE("vcm_pls0_mod",
-            pls0.modulation == dsca::Modulation::QPSK);
+            pls0.modulation == gw::Modulation::QPSK);
     REQUIRE("vcm_pls0_slot", pls0.vcm_slot == 0);
     REQUIRE("vcm_pls0_total", pls0.vcm_total == 4);
 
     auto pls2 = sched.plsForFrame(2);
     REQUIRE("vcm_pls2_mod",
-            pls2.modulation == dsca::Modulation::QAM64);
+            pls2.modulation == gw::Modulation::QAM64);
 
     // Frame 4 wraps → slot 0 again
     auto pls4 = sched.plsForFrame(4);
     REQUIRE("vcm_pls4_wraps",
-            pls4.modulation == dsca::Modulation::QPSK);
+            pls4.modulation == gw::Modulation::QPSK);
 }
 
 static void test_modcod_detector_uniform() {
     // Non-VCM: uniform modcod, confirm after 2 matching PLS blocks
-    dsca::ModCodDetector det(2);
+    gw::ModCodDetector det(2);
 
-    dsca::PLSBlock pls;
+    gw::PLSBlock pls;
     pls.valid = true;
-    pls.modulation = dsca::Modulation::QAM16;
-    pls.fec_rate = dsca::FECRate::Rate_3_4;
+    pls.modulation = gw::Modulation::QAM16;
+    pls.fec_rate = gw::FECRate::Rate_3_4;
     pls.vcm_active = false;
 
     // First feed → initializes, reports change
     bool changed = det.feed(pls);
     REQUIRE("det_init_changed", changed);
     REQUIRE("det_init_mod",
-            det.currentModulation() == dsca::Modulation::QAM16);
+            det.currentModulation() == gw::Modulation::QAM16);
 
     // Same modcod → no change
     changed = det.feed(pls);
     REQUIRE("det_same_no_change", !changed);
 
     // New modcod → needs 2 confirmations
-    dsca::PLSBlock pls2 = pls;
-    pls2.modulation = dsca::Modulation::QAM64;
+    gw::PLSBlock pls2 = pls;
+    pls2.modulation = gw::Modulation::QAM64;
 
     changed = det.feed(pls2); // First new PLS
     REQUIRE("det_new_first", !changed);
@@ -1183,17 +1183,17 @@ static void test_modcod_detector_uniform() {
     changed = det.feed(pls2); // Second → confirmed
     REQUIRE("det_new_confirmed", changed);
     REQUIRE("det_new_mod",
-            det.currentModulation() == dsca::Modulation::QAM64);
+            det.currentModulation() == gw::Modulation::QAM64);
 }
 
 static void test_modcod_detector_vcm() {
     // VCM mode: immediate ModCod changes per slot
-    dsca::ModCodDetector det(2);
+    gw::ModCodDetector det(2);
 
-    dsca::PLSBlock pls0;
+    gw::PLSBlock pls0;
     pls0.valid = true;
-    pls0.modulation = dsca::Modulation::QPSK;
-    pls0.fec_rate = dsca::FECRate::Rate_1_2;
+    pls0.modulation = gw::Modulation::QPSK;
+    pls0.fec_rate = gw::FECRate::Rate_1_2;
     pls0.vcm_active = true;
     pls0.vcm_slot = 0;
     pls0.vcm_total = 4;
@@ -1201,10 +1201,10 @@ static void test_modcod_detector_vcm() {
     det.feed(pls0); // Init
 
     // VCM slot 2: different modcod → should change immediately
-    dsca::PLSBlock pls2;
+    gw::PLSBlock pls2;
     pls2.valid = true;
-    pls2.modulation = dsca::Modulation::QAM64;
-    pls2.fec_rate = dsca::FECRate::Rate_3_4;
+    pls2.modulation = gw::Modulation::QAM64;
+    pls2.fec_rate = gw::FECRate::Rate_3_4;
     pls2.vcm_active = true;
     pls2.vcm_slot = 2;
     pls2.vcm_total = 4;
@@ -1212,7 +1212,7 @@ static void test_modcod_detector_vcm() {
     bool changed = det.feed(pls2);
     REQUIRE("det_vcm_immediate", changed);
     REQUIRE("det_vcm_mod",
-            det.currentModulation() == dsca::Modulation::QAM64);
+            det.currentModulation() == gw::Modulation::QAM64);
     REQUIRE("det_vcm_slot", det.vcmSlot() == 2);
 }
 
@@ -1222,16 +1222,16 @@ static void test_modcod_detector_vcm() {
 
 // --- PLS BPSK roundtrip: encode → unpack to bits → pack to bytes → decode ---
 static void test_pls_bpsk_roundtrip() {
-    dsca::PLSBlock orig;
-    orig.modulation = dsca::Modulation::QAM16;
-    orig.fec_rate   = dsca::FECRate::Rate_3_4;
+    gw::PLSBlock orig;
+    orig.modulation = gw::Modulation::QAM16;
+    orig.fec_rate   = gw::FECRate::Rate_3_4;
     orig.vcm_active = true;
     orig.vcm_slot   = 5;
     orig.vcm_total  = 8;
 
     // Encode → 8 packed bytes
     std::vector<uint8_t> packed;
-    dsca::encodePLS(orig, packed);
+    gw::encodePLS(orig, packed);
     REQUIRE("pls_rt_encode_size", packed.size() == 8);
 
     // Unpack bytes to individual bits (simulates BPSK demap)
@@ -1259,8 +1259,8 @@ static void test_pls_bpsk_roundtrip() {
     REQUIRE("pls_rt_repack_match", match);
 
     // Decode from repacked bytes
-    dsca::PLSBlock decoded;
-    bool ok = dsca::decodePLS(repacked, decoded);
+    gw::PLSBlock decoded;
+    bool ok = gw::decodePLS(repacked, decoded);
     REQUIRE("pls_rt_decode_ok", ok && decoded.valid);
     REQUIRE("pls_rt_mod",   decoded.modulation == orig.modulation);
     REQUIRE("pls_rt_fec",   decoded.fec_rate == orig.fec_rate);
@@ -1272,16 +1272,16 @@ static void test_pls_bpsk_roundtrip() {
 // --- VCM per-slot tracking: detect when slot modcod changes ---
 static void test_vcm_slot_tracking() {
     // Create a 4-slot VCM schedule: 2 QPSK½ + 2 QAM64¾
-    auto sched = dsca::createStereoVCM(
-        dsca::Modulation::QPSK, dsca::FECRate::Rate_1_2,
-        dsca::Modulation::QAM64, dsca::FECRate::Rate_3_4,
+    auto sched = gw::createStereoVCM(
+        gw::Modulation::QPSK, gw::FECRate::Rate_1_2,
+        gw::Modulation::QAM64, gw::FECRate::Rate_3_4,
         2, 2);
     REQUIRE("vcm_track_enabled", sched.enabled);
     REQUIRE("vcm_track_slots", sched.num_slots == 4);
 
     // Simulate walking through frames and track modcod changes
-    dsca::Modulation last_mod = sched.entries[0].modulation;
-    dsca::FECRate    last_fec = sched.entries[0].fec_rate;
+    gw::Modulation last_mod = sched.entries[0].modulation;
+    gw::FECRate    last_fec = sched.entries[0].fec_rate;
     int change_count = 0;
 
     for (uint32_t frame = 0; frame < 12; ++frame) {
@@ -1301,18 +1301,18 @@ static void test_vcm_slot_tracking() {
 
     // Verify PLS generation matches schedule
     auto pls0 = sched.plsForFrame(0);
-    REQUIRE("vcm_pls_slot0_mod", pls0.modulation == dsca::Modulation::QPSK);
-    REQUIRE("vcm_pls_slot0_fec", pls0.fec_rate == dsca::FECRate::Rate_1_2);
+    REQUIRE("vcm_pls_slot0_mod", pls0.modulation == gw::Modulation::QPSK);
+    REQUIRE("vcm_pls_slot0_fec", pls0.fec_rate == gw::FECRate::Rate_1_2);
     REQUIRE("vcm_pls_slot0_vcm", pls0.vcm_active);
 
     auto pls2 = sched.plsForFrame(2);
-    REQUIRE("vcm_pls_slot2_mod", pls2.modulation == dsca::Modulation::QAM64);
-    REQUIRE("vcm_pls_slot2_fec", pls2.fec_rate == dsca::FECRate::Rate_3_4);
+    REQUIRE("vcm_pls_slot2_mod", pls2.modulation == gw::Modulation::QAM64);
+    REQUIRE("vcm_pls_slot2_fec", pls2.fec_rate == gw::FECRate::Rate_3_4);
 }
 
 // --- Playback ring buffer: write/read integrity ---
 static void test_playback_ringbuffer() {
-    dsca::RingBuffer ring(1024);
+    gw::RingBuffer ring(1024);
 
     // Write 100 samples
     std::vector<float> tx(100);
@@ -1343,22 +1343,22 @@ static void test_playback_ringbuffer() {
 
 // --- Version defines: verify they're set correctly ---
 static void test_version_defines() {
-    REQUIRE("version_major", DSCA_VERSION_MAJOR == 2);
-    REQUIRE("version_minor", DSCA_VERSION_MINOR == 0);
-    REQUIRE("version_patch", DSCA_VERSION_PATCH == 0);
+    REQUIRE("version_major", GW_VERSION_MAJOR == 2);
+    REQUIRE("version_minor", GW_VERSION_MINOR == 0);
+    REQUIRE("version_patch", GW_VERSION_PATCH == 0);
 
     // Build date should be a non-empty string
-    const char* date = DSCA_BUILD_DATE;
+    const char* date = GW_BUILD_DATE;
     REQUIRE("build_date_set", date != nullptr && std::strlen(date) > 0);
 }
 
 // --- Hierarchical TX symbol count: verify mapping produces correct output size ---
 static void test_hier_tx_symbol_count() {
-    dsca::HierarchicalConfig cfg;
-    cfg.mode    = dsca::HierarchicalMode::QPSK_QAM16;
+    gw::HierarchicalConfig cfg;
+    cfg.mode    = gw::HierarchicalMode::QPSK_QAM16;
     cfg.alpha   = 2.0f;
     cfg.enabled = true;
-    dsca::HierarchicalMapper mapper(cfg);
+    gw::HierarchicalMapper mapper(cfg);
 
     REQUIRE("hier_tx_hp_bps", mapper.hpBPS() == 2);
     REQUIRE("hier_tx_lp_bps", mapper.lpBPS() == 2);
@@ -1374,7 +1374,7 @@ static void test_hier_tx_symbol_count() {
         lp_data[i] = static_cast<uint8_t>(i * 37);
     }
 
-    dsca::ComplexBuf out;
+    gw::ComplexBuf out;
     mapper.map(hp_data, 100, lp_data, 100, out);
     REQUIRE("hier_tx_sym_count", out.size() == 50);
 
@@ -1387,15 +1387,15 @@ static void test_hier_tx_symbol_count() {
 
 // --- Rebuild FEC: verify LDPC sizes change between rates ---
 static void test_rebuild_fec_sizes() {
-    auto blk = dsca::LDPCBlockSize::Short;
+    auto blk = gw::LDPCBlockSize::Short;
 
     // Rate 1/2
-    dsca::LDPCEncoder enc_half(dsca::FECRate::Rate_1_2, blk);
+    gw::LDPCEncoder enc_half(gw::FECRate::Rate_1_2, blk);
     size_t cw_half = enc_half.codewordBits();
     size_t info_half = enc_half.infoBytes();
 
     // Rate 3/4
-    dsca::LDPCEncoder enc_34(dsca::FECRate::Rate_3_4, blk);
+    gw::LDPCEncoder enc_34(gw::FECRate::Rate_3_4, blk);
     size_t cw_34 = enc_34.codewordBits();
     size_t info_34 = enc_34.infoBytes();
 
@@ -1404,17 +1404,17 @@ static void test_rebuild_fec_sizes() {
     REQUIRE("fec_info_differ", info_34 > info_half);
 
     // Verify interleaver adapts to codeword size
-    dsca::BitInterleaver intlv_half(cw_half);
-    dsca::BitInterleaver intlv_34(cw_34);
+    gw::BitInterleaver intlv_half(cw_half);
+    gw::BitInterleaver intlv_34(cw_34);
     // Both should be constructible without errors
     REQUIRE("fec_intlv_half_ok", cw_half > 0);
     REQUIRE("fec_intlv_34_ok", cw_34 > 0);
 
     // Frame capacity check
-    size_t cap_half = (info_half > dsca::constants::FRAME_OVERHEAD)
-                       ? info_half - dsca::constants::FRAME_OVERHEAD : 0;
-    size_t cap_34   = (info_34 > dsca::constants::FRAME_OVERHEAD)
-                       ? info_34 - dsca::constants::FRAME_OVERHEAD : 0;
+    size_t cap_half = (info_half > gw::constants::FRAME_OVERHEAD)
+                       ? info_half - gw::constants::FRAME_OVERHEAD : 0;
+    size_t cap_34   = (info_34 > gw::constants::FRAME_OVERHEAD)
+                       ? info_34 - gw::constants::FRAME_OVERHEAD : 0;
     REQUIRE("fec_cap_34_larger", cap_34 > cap_half);
 }
 
@@ -1441,40 +1441,40 @@ static void test_threads_portability() {
 // --- Valid splits helper ---
 static void test_hier_valid_splits() {
     // BPSK (1 bps): no valid splits
-    auto bpsk_splits = dsca::validHierSplits(dsca::Modulation::BPSK);
+    auto bpsk_splits = gw::validHierSplits(gw::Modulation::BPSK);
     REQUIRE("splits_bpsk_none", bpsk_splits.empty());
 
     // QPSK (2 bps): only 1+1
-    auto qpsk_splits = dsca::validHierSplits(dsca::Modulation::QPSK);
+    auto qpsk_splits = gw::validHierSplits(gw::Modulation::QPSK);
     REQUIRE("splits_qpsk_count", qpsk_splits.size() == 1);
     REQUIRE("splits_qpsk_11", qpsk_splits[0].first == 1 && qpsk_splits[0].second == 1);
 
     // QAM16 (4 bps): 1+3, 2+2, 3+1
-    auto q16_splits = dsca::validHierSplits(dsca::Modulation::QAM16);
+    auto q16_splits = gw::validHierSplits(gw::Modulation::QAM16);
     REQUIRE("splits_qam16_count", q16_splits.size() == 3);
 
     // QAM256 (8 bps): 7 valid splits (1+7 through 7+1)
-    auto q256_splits = dsca::validHierSplits(dsca::Modulation::QAM256);
+    auto q256_splits = gw::validHierSplits(gw::Modulation::QAM256);
     REQUIRE("splits_qam256_count", q256_splits.size() == 7);
 
     // QAM4096 (12 bps): 11 valid splits
-    auto q4096_splits = dsca::validHierSplits(dsca::Modulation::QAM4096);
+    auto q4096_splits = gw::validHierSplits(gw::Modulation::QAM4096);
     REQUIRE("splits_qam4096_count", q4096_splits.size() == 11);
 
     // Validation function
-    REQUIRE("valid_hp2_lp6", dsca::isValidHierSplit(dsca::Modulation::QAM256, 2, 6));
-    REQUIRE("invalid_hp0", !dsca::isValidHierSplit(dsca::Modulation::QAM256, 0, 8));
-    REQUIRE("invalid_sum", !dsca::isValidHierSplit(dsca::Modulation::QAM256, 3, 3));
+    REQUIRE("valid_hp2_lp6", gw::isValidHierSplit(gw::Modulation::QAM256, 2, 6));
+    REQUIRE("invalid_hp0", !gw::isValidHierSplit(gw::Modulation::QAM256, 0, 8));
+    REQUIRE("invalid_sum", !gw::isValidHierSplit(gw::Modulation::QAM256, 3, 3));
 }
 
 // --- Custom QAM256: HP=2, LP=6 (QPSK-like robust + QAM64 enhance) ---
 static void test_hier_custom_qam256() {
-    auto cfg = dsca::makeHierConfig(dsca::Modulation::QAM256, 2, 2.5f);
+    auto cfg = gw::makeHierConfig(gw::Modulation::QAM256, 2, 2.5f);
     REQUIRE("q256_custom_enabled", cfg.enabled);
     REQUIRE("q256_custom_hp", cfg.hp_bits == 2);
     REQUIRE("q256_custom_lp", cfg.lp_bits == 6);
 
-    dsca::HierarchicalMapper mapper(cfg);
+    gw::HierarchicalMapper mapper(cfg);
     REQUIRE("q256_hp_bps", mapper.hpBPS() == 2);
     REQUIRE("q256_lp_bps", mapper.lpBPS() == 6);
     REQUIRE("q256_total", mapper.totalBPS() == 8);
@@ -1484,7 +1484,7 @@ static void test_hier_custom_qam256() {
     uint8_t lp_data[12] = {};
     for (int i = 0; i < 12; ++i) lp_data[i] = static_cast<uint8_t>(i * 19);
 
-    dsca::ComplexBuf syms;
+    gw::ComplexBuf syms;
     mapper.map(hp_data, 32, lp_data, 96, syms);
     REQUIRE("q256_map_count", syms.size() == 16);
 
@@ -1508,12 +1508,12 @@ static void test_hier_custom_qam256() {
 
 // --- Custom QAM4096: HP=4, LP=8 ---
 static void test_hier_custom_qam4096() {
-    auto cfg = dsca::makeHierConfig(dsca::Modulation::QAM4096, 4, 3.0f);
+    auto cfg = gw::makeHierConfig(gw::Modulation::QAM4096, 4, 3.0f);
     REQUIRE("q4096_enabled", cfg.enabled);
     REQUIRE("q4096_hp", cfg.hp_bits == 4);
     REQUIRE("q4096_lp", cfg.lp_bits == 8);
 
-    dsca::HierarchicalMapper mapper(cfg);
+    gw::HierarchicalMapper mapper(cfg);
     REQUIRE("q4096_total", mapper.totalBPS() == 12);
 
     // Constellation should have 2^4 × 2^8 = 4096 points
@@ -1521,7 +1521,7 @@ static void test_hier_custom_qam4096() {
     uint8_t hp_data[2] = {0xAB, 0xCD};
     uint8_t lp_data[4] = {0x12, 0x34, 0x56, 0x78};
 
-    dsca::ComplexBuf syms;
+    gw::ComplexBuf syms;
     mapper.map(hp_data, 16, lp_data, 32, syms);
     // 16 HP bits / 4 = 4 syms, 32 LP bits / 8 = 4 syms → 4 symbols
     REQUIRE("q4096_map_count", syms.size() == 4);
@@ -1534,18 +1534,18 @@ static void test_hier_custom_qam4096() {
 
 // --- α=1 should produce uniform constellation (no hierarchy benefit) ---
 static void test_hier_alpha1_uniform() {
-    auto cfg = dsca::makeHierConfig(dsca::Modulation::QAM16, 2, 1.0f);
-    dsca::HierarchicalMapper mapper(cfg);
+    auto cfg = gw::makeHierConfig(gw::Modulation::QAM16, 2, 1.0f);
+    gw::HierarchicalMapper mapper(cfg);
 
     // At α=1, all constellation points should be at standard QAM16 positions
     // (normalized). There should be 16 unique points.
     // Map all 4 HP values × 4 LP values
-    std::vector<dsca::ComplexSample> all_points;
+    std::vector<gw::ComplexSample> all_points;
     for (uint8_t hp = 0; hp < 4; ++hp) {
         for (uint8_t lp = 0; lp < 4; ++lp) {
             uint8_t hp_byte = static_cast<uint8_t>(hp << 6);
             uint8_t lp_byte = static_cast<uint8_t>(lp << 6);
-            dsca::ComplexBuf out;
+            gw::ComplexBuf out;
             mapper.map(&hp_byte, 2, &lp_byte, 2, out);
             if (!out.empty()) all_points.push_back(out[0]);
         }
@@ -1568,14 +1568,14 @@ static void test_hier_alpha1_uniform() {
 // --- Custom roundtrip: map→demap HP and LP for various splits ---
 static void test_hier_custom_roundtrip() {
     // QAM64 with HP=3, LP=3 (symmetric)
-    auto cfg = dsca::makeHierConfig(dsca::Modulation::QAM64, 3, 2.0f);
-    dsca::HierarchicalMapper mapper(cfg);
+    auto cfg = gw::makeHierConfig(gw::Modulation::QAM64, 3, 2.0f);
+    gw::HierarchicalMapper mapper(cfg);
 
     // 8 symbols worth: HP = 24 bits = 3 bytes, LP = 24 bits = 3 bytes
     uint8_t hp_data[3] = {0x55, 0xAA, 0x0F};
     uint8_t lp_data[3] = {0x33, 0xCC, 0xF0};
 
-    dsca::ComplexBuf syms;
+    gw::ComplexBuf syms;
     mapper.map(hp_data, 24, lp_data, 24, syms);
     REQUIRE("rt_q64_33_count", syms.size() == 8);
 
@@ -1600,14 +1600,14 @@ static void test_hier_custom_roundtrip() {
 
 // --- Soft demap for custom mode: LLRs should have correct sign ---
 static void test_hier_soft_custom() {
-    auto cfg = dsca::makeHierConfig(dsca::Modulation::QAM64, 2, 2.0f);
-    dsca::HierarchicalMapper mapper(cfg);
+    auto cfg = gw::makeHierConfig(gw::Modulation::QAM64, 2, 2.0f);
+    gw::HierarchicalMapper mapper(cfg);
 
     // Map known data
     uint8_t hp_data[1] = {0xC0};  // 2 HP bits = 1 symbol: bits "11"
     uint8_t lp_data[1] = {0x50};  // 4 LP bits = 1 symbol: bits "0101"
 
-    dsca::ComplexBuf syms;
+    gw::ComplexBuf syms;
     mapper.map(hp_data, 2, lp_data, 4, syms);
     REQUIRE("soft_custom_count", syms.size() == 1);
 
@@ -1634,26 +1634,26 @@ static void test_hier_soft_custom() {
 static void test_snr_thresholds() {
     // BPSK 1/2: spectral efficiency = 0.5 bps
     // Shannon: 10·log10(2^0.5 - 1) = 10·log10(0.414) = -3.83 dB
-    auto t = dsca::computeThreshold(dsca::Modulation::BPSK, dsca::FECRate::Rate_1_2);
+    auto t = gw::computeThreshold(gw::Modulation::BPSK, gw::FECRate::Rate_1_2);
     REQUIRE_NEAR("thresh_bpsk12_shan", t.shannon_limit_db, -3.83f, 0.2f);
     REQUIRE("thresh_bpsk12_impl", t.impl_loss_db > 0.f);
     REQUIRE("thresh_bpsk12_total", t.threshold_db > t.shannon_limit_db);
     REQUIRE_NEAR("thresh_bpsk12_eff", t.spectral_eff, 0.5f, 0.01f);
 
     // QAM64 3/4: spectral eff = 6 × 0.75 = 4.5 bps
-    auto t2 = dsca::computeThreshold(dsca::Modulation::QAM64, dsca::FECRate::Rate_3_4);
+    auto t2 = gw::computeThreshold(gw::Modulation::QAM64, gw::FECRate::Rate_3_4);
     REQUIRE_NEAR("thresh_q64_34_eff", t2.spectral_eff, 4.5f, 0.01f);
     REQUIRE("thresh_q64_34_higher", t2.threshold_db > t.threshold_db);
 
     // QAM4096 9/10: highest modcod, should have highest threshold
-    auto t3 = dsca::computeThreshold(dsca::Modulation::QAM4096, dsca::FECRate::Rate_9_10);
+    auto t3 = gw::computeThreshold(gw::Modulation::QAM4096, gw::FECRate::Rate_9_10);
     REQUIRE("thresh_q4096_highest", t3.threshold_db > t2.threshold_db);
     REQUIRE_NEAR("thresh_q4096_eff", t3.spectral_eff, 10.8f, 0.01f);
 }
 
 // --- All thresholds should be monotonically ordered by threshold_db ---
 static void test_snr_threshold_ordering() {
-    auto all = dsca::computeAllThresholds();
+    auto all = gw::computeAllThresholds();
     REQUIRE("thresh_all_count", all.size() == 77);  // 7 mods × 11 rates
 
     // Sorted ascending
@@ -1667,8 +1667,8 @@ static void test_snr_threshold_ordering() {
     REQUIRE("thresh_sorted", sorted);
 
     // First entry should be lowest modcod (BPSK 1/4)
-    REQUIRE("thresh_first_bpsk", all[0].modulation == dsca::Modulation::BPSK);
-    REQUIRE("thresh_first_14", all[0].fec_rate == dsca::FECRate::Rate_1_4);
+    REQUIRE("thresh_first_bpsk", all[0].modulation == gw::Modulation::BPSK);
+    REQUIRE("thresh_first_14", all[0].fec_rate == gw::FECRate::Rate_1_4);
 
     // Spectral efficiency should always be positive
     bool all_pos = true;
@@ -1680,77 +1680,77 @@ static void test_snr_threshold_ordering() {
 
 // --- SCA channel model ---
 static void test_sca_channel_model() {
-    dsca::SCAChannelParams sca;
+    gw::SCAChannelParams sca;
 
     // At 50 dB RF SNR (strong signal): SCA SNR should be positive and reasonable
-    float sca_snr = dsca::rfToScaSNR(50.0f, sca);
+    float sca_snr = gw::rfToScaSNR(50.0f, sca);
     REQUIRE("sca_strong_positive", sca_snr > 0.f);
     REQUIRE("sca_strong_reasonable", sca_snr < 80.f);
 
     // At 5 dB RF SNR (below FM threshold): SCA SNR should be very low
-    float sca_weak = dsca::rfToScaSNR(5.0f, sca);
+    float sca_weak = gw::rfToScaSNR(5.0f, sca);
     REQUIRE("sca_weak_negative", sca_weak < 0.f);
 
     // Higher injection → higher SCA SNR
-    dsca::SCAChannelParams sca_high = sca;
+    gw::SCAChannelParams sca_high = sca;
     sca_high.sca_injection_pct = 30.0f;
-    float sca_high_snr = dsca::rfToScaSNR(50.0f, sca_high);
+    float sca_high_snr = gw::rfToScaSNR(50.0f, sca_high);
     REQUIRE("sca_inj_higher", sca_high_snr > sca_snr);
 
     // Round-trip: rf → sca → rf should recover original
     float rf_orig = 45.0f;
-    float sca_mid = dsca::rfToScaSNR(rf_orig, sca);
-    float rf_back = dsca::scaToRfSNR(sca_mid, sca);
+    float sca_mid = gw::rfToScaSNR(rf_orig, sca);
+    float rf_back = gw::scaToRfSNR(sca_mid, sca);
     REQUIRE_NEAR("sca_roundtrip", rf_back, rf_orig, 0.1f);
 }
 
 // --- Propagation models ---
 static void test_propagation_models() {
     // Free-space at 1 km, 100 MHz: FSPL = 20log10(1) + 20log10(100) + 32.44 = 72.44 dB
-    float fspl = dsca::freeSpacePathLoss(1.0f, 100.0f);
+    float fspl = gw::freeSpacePathLoss(1.0f, 100.0f);
     REQUIRE_NEAR("fspl_1km_100mhz", fspl, 72.44f, 0.1f);
 
     // Double distance → +6 dB
-    float fspl_2km = dsca::freeSpacePathLoss(2.0f, 100.0f);
+    float fspl_2km = gw::freeSpacePathLoss(2.0f, 100.0f);
     REQUIRE_NEAR("fspl_inverse_sq", fspl_2km - fspl, 6.02f, 0.1f);
 
     // Hata: suburban should have less loss than urban
-    float hata_suburban = dsca::hataPathLoss(10.0f, 98.0f, 100.0f, 2.0f,
-                                              dsca::TerrainType::Suburban);
-    float hata_urban = dsca::hataPathLoss(10.0f, 98.0f, 100.0f, 2.0f,
-                                           dsca::TerrainType::Urban);
+    float hata_suburban = gw::hataPathLoss(10.0f, 98.0f, 100.0f, 2.0f,
+                                              gw::TerrainType::Suburban);
+    float hata_urban = gw::hataPathLoss(10.0f, 98.0f, 100.0f, 2.0f,
+                                           gw::TerrainType::Urban);
     REQUIRE("hata_suburban_less", hata_suburban < hata_urban);
 
     // Rural should have less loss than suburban
-    float hata_rural = dsca::hataPathLoss(10.0f, 98.0f, 100.0f, 2.0f,
-                                           dsca::TerrainType::OpenRural);
+    float hata_rural = gw::hataPathLoss(10.0f, 98.0f, 100.0f, 2.0f,
+                                           gw::TerrainType::OpenRural);
     REQUIRE("hata_rural_less", hata_rural < hata_suburban);
 
     // All should be positive
     REQUIRE("hata_all_positive", hata_rural > 0.f && hata_suburban > 0.f && hata_urban > 0.f);
 
     // Longer distance → more loss
-    float hata_20km = dsca::hataPathLoss(20.0f, 98.0f, 100.0f, 2.0f,
-                                          dsca::TerrainType::Suburban);
+    float hata_20km = gw::hataPathLoss(20.0f, 98.0f, 100.0f, 2.0f,
+                                          gw::TerrainType::Suburban);
     REQUIRE("hata_dist_more", hata_20km > hata_suburban);
 }
 
 // --- Full link budget ---
 static void test_link_budget() {
-    dsca::PropagationParams prop;
+    gw::PropagationParams prop;
     prop.erp_watts   = 1000.0f;   // 1 kW
     prop.freq_mhz    = 98.0f;
     prop.tx_height_m = 100.0f;
     prop.rx_height_m = 2.0f;
-    prop.terrain     = dsca::TerrainType::Suburban;
+    prop.terrain     = gw::TerrainType::Suburban;
 
-    dsca::SCAChannelParams sca;
-    dsca::OFDMParams ofdm;
+    gw::SCAChannelParams sca;
+    gw::OFDMParams ofdm;
     ofdm.fft_size = 256;
-    ofdm.modulation = dsca::Modulation::QPSK;
+    ofdm.modulation = gw::Modulation::QPSK;
     ofdm.sample_rate = 48000;
 
-    auto lb = dsca::computeLinkBudget(prop, sca, 10.0f, ofdm);
+    auto lb = gw::computeLinkBudget(prop, sca, 10.0f, ofdm);
 
     // ERP checks
     REQUIRE_NEAR("lb_erp_dbw", lb.erp_dbw, 30.0f, 0.1f);
@@ -1798,10 +1798,10 @@ static void test_link_budget() {
 // --- Hierarchical SNR thresholds ---
 static void test_hier_snr_thresholds() {
     // QAM64 HP=2 LP=4, α=2: HP should need less SNR than LP
-    auto cfg = dsca::makeHierConfig(dsca::Modulation::QAM64, 2, 2.0f);
-    auto ht = dsca::computeHierThreshold(cfg,
-                                          dsca::FECRate::Rate_1_2,
-                                          dsca::FECRate::Rate_3_4);
+    auto cfg = gw::makeHierConfig(gw::Modulation::QAM64, 2, 2.0f);
+    auto ht = gw::computeHierThreshold(cfg,
+                                          gw::FECRate::Rate_1_2,
+                                          gw::FECRate::Rate_3_4);
 
     REQUIRE("hier_hp_less_lp", ht.hp_threshold_db < ht.lp_threshold_db);
     REQUIRE("hier_hp_eff_pos", ht.hp_spectral_eff > 0.f);
@@ -1809,28 +1809,28 @@ static void test_hier_snr_thresholds() {
     REQUIRE("hier_coverage_gain", ht.coverage_gain_db > 0.f);
 
     // Higher α → more HP coverage gain
-    auto cfg_a4 = dsca::makeHierConfig(dsca::Modulation::QAM64, 2, 4.0f);
-    auto ht_a4 = dsca::computeHierThreshold(cfg_a4,
-                                              dsca::FECRate::Rate_1_2,
-                                              dsca::FECRate::Rate_3_4);
+    auto cfg_a4 = gw::makeHierConfig(gw::Modulation::QAM64, 2, 4.0f);
+    auto ht_a4 = gw::computeHierThreshold(cfg_a4,
+                                              gw::FECRate::Rate_1_2,
+                                              gw::FECRate::Rate_3_4);
     REQUIRE("hier_a4_more_gain", ht_a4.coverage_gain_db > ht.coverage_gain_db);
     REQUIRE("hier_a4_hp_lower", ht_a4.hp_threshold_db < ht.hp_threshold_db);
 
     // Link budget with hierarchical
-    dsca::PropagationParams prop;
+    gw::PropagationParams prop;
     prop.erp_watts = 1000.0f;
     prop.freq_mhz = 98.0f;
     prop.tx_height_m = 100.0f;
-    prop.terrain = dsca::TerrainType::Suburban;
+    prop.terrain = gw::TerrainType::Suburban;
 
-    dsca::SCAChannelParams sca;
-    dsca::OFDMParams ofdm;
+    gw::SCAChannelParams sca;
+    gw::OFDMParams ofdm;
     ofdm.fft_size = 256;
     ofdm.sample_rate = 48000;
 
-    auto lb = dsca::computeLinkBudget(prop, sca, 10.0f, ofdm,
-                                       &cfg, dsca::FECRate::Rate_1_2,
-                                       dsca::FECRate::Rate_3_4);
+    auto lb = gw::computeLinkBudget(prop, sca, 10.0f, ofdm,
+                                       &cfg, gw::FECRate::Rate_1_2,
+                                       gw::FECRate::Rate_3_4);
     REQUIRE("lb_has_hier", lb.has_hier);
     REQUIRE("lb_hp_range_gt_lp", lb.hier_hp_range_km >= lb.hier_lp_range_km);
 }
@@ -1840,7 +1840,7 @@ static void test_hier_snr_thresholds() {
 // =========================================================================
 
 int main() {
-    std::printf("=== DSCA-NG Phase 4+5+6 — GUI + Advanced DSP + Polish Tests ===\n\n");
+    std::printf("=== Groundwave Phase 4+5+6 — GUI + Advanced DSP + Polish Tests ===\n\n");
 
     try {
         test_appstate_defaults();

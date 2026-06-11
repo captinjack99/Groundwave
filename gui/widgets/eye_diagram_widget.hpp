@@ -14,7 +14,7 @@
 #include <deque>
 #include <mutex>
 
-namespace dsca {
+namespace gw {
 
 class EyeDiagramWidget : public QWidget {
     Q_OBJECT
@@ -40,4 +40,4 @@ private:
     mutable std::mutex mtx_;
 };
 
-} // namespace dsca
+} // namespace gw

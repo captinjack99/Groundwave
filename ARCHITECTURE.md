@@ -1,4 +1,4 @@
-# DSCA-NG v2 — Ground-Up Rebuild
+# Groundwave v2 — Ground-Up Rebuild
 
 ## Critical Bugs Found in v1
 
@@ -30,8 +30,8 @@ connected to the transmitter or soundcard modem.
 These don't match. Different byte offsets cascade into total corruption.
 
 ### 4. Namespace Inconsistency
-- `OFDMModulator` in `dsca::`
-- `OFDMDemodulator` in `dsca::modulation::`
+- `OFDMModulator` in `gw::`
+- `OFDMDemodulator` in `gw::modulation::`
 This causes confusing include paths and link errors.
 
 ### 5. GRAND `__builtin_popcount` — Not Portable
@@ -55,7 +55,7 @@ confuse the architecture.
    domain, IFFT'd for TX. RX FFTs received preamble, divides by known
    freq symbols. Correct by construction.
 
-3. **One namespace** — Everything in `dsca::`. No nested namespaces for
+3. **One namespace** — Everything in `gw::`. No nested namespaces for
    core components.
 
 4. **Incremental build** — Core chain first, loopback verified, then

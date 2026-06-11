@@ -2,7 +2,7 @@
  * @file simd_helpers.hpp
  * @brief SIMD primitives for the hot DSP loops.
  *
- * Behind `DSCA_ENABLE_SIMD`, provides AVX2 implementations of:
+ * Behind `GW_ENABLE_SIMD`, provides AVX2 implementations of:
  *   - parallel distance-squared between a scalar reference point and 8
  *     constellation points (used by soft demapping)
  *   - SIMD horizontal min reduction
@@ -17,14 +17,14 @@
 #include <cmath>
 #include <algorithm>
 
-#if defined(DSCA_ENABLE_SIMD) && (defined(__AVX2__) || defined(_MSC_VER))
+#if defined(GW_ENABLE_SIMD) && (defined(__AVX2__) || defined(_MSC_VER))
 #include <immintrin.h>
-#define DSCA_HAVE_AVX2 1
+#define GW_HAVE_AVX2 1
 #else
-#define DSCA_HAVE_AVX2 0
+#define GW_HAVE_AVX2 0
 #endif
 
-namespace dsca {
+namespace gw {
 namespace simd {
 
 /** Compute |r - s|² for 8 constellation points in parallel.
@@ -33,7 +33,7 @@ namespace simd {
 inline void distSquared8(float r_re, float r_im,
                           const float* s_i, const float* s_q,
                           float* d_out) {
-#if DSCA_HAVE_AVX2
+#if GW_HAVE_AVX2
     __m256 r_re_v = _mm256_set1_ps(r_re);
     __m256 r_im_v = _mm256_set1_ps(r_im);
     __m256 si = _mm256_loadu_ps(s_i);
@@ -55,7 +55,7 @@ inline void distSquared8(float r_re, float r_im,
 inline float hmin(const float* x, size_t n) {
     if (n == 0) return 0.f;
     float m = x[0];
-#if DSCA_HAVE_AVX2
+#if GW_HAVE_AVX2
     if (n >= 8) {
         __m256 acc = _mm256_loadu_ps(x);
         size_t i = 8;
@@ -76,4 +76,4 @@ inline float hmin(const float* x, size_t n) {
 }
 
 } // namespace simd
-} // namespace dsca
+} // namespace gw

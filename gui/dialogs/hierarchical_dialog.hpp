@@ -21,7 +21,7 @@
 #include <QLabel>
 #include <QCheckBox>
 
-namespace dsca {
+namespace gw {
 
 class HierarchicalDialog : public QDialog {
     Q_OBJECT
@@ -57,4 +57,4 @@ private:
     HierFlowWidget* flow_widget_;         // visual signal-flow diagram
 };
 
-} // namespace dsca
+} // namespace gw

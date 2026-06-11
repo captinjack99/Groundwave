@@ -1,4 +1,4 @@
-# DSCA-NG vs. HD Radio — an honest, numbers-backed scorecard
+# Groundwave vs. HD Radio — an honest, numbers-backed scorecard
 
 *What a modern, royalty-free digital-radio waveform actually buys you over hybrid
 IBOC (HD Radio), measured rather than asserted.*
@@ -63,10 +63,10 @@ on strong local signals.
 
 Even that floor is a decisive win over what shares this space today:
 
-- **Analog SCA**: one ~5 kHz mono channel. DSCA-NG delivers a *stereo* program (or several)
+- **Analog SCA**: one ~5 kHz mono channel. Groundwave delivers a *stereo* program (or several)
   with FEC and graceful loss recovery in the same slot.
 - **HD2/HD3 multicast**: HDC at ~24–48 kbps — exactly where it turns swishy and underwater.
-  DSCA-NG runs **Opus stereo at 44–92 kbps**, which is cleanly better at equal-or-lower rate,
+  Groundwave runs **Opus stereo at 44–92 kbps**, which is cleanly better at equal-or-lower rate,
   **and DRED rides through dropouts instead of muting**.
 
 …all of it riding alongside the analog signal, costing only a sliver of modulation budget,
@@ -76,7 +76,7 @@ and **royalty-free**.
 
 This is the fair fight. In the identical spectrum HD Radio's digital sidebands occupy:
 
-- **At IBOC-class robustness (QPSK):** DSCA-NG carries **86–135 kbps** — i.e. it *matches*
+- **At IBOC-class robustness (QPSK):** Groundwave carries **86–135 kbps** — i.e. it *matches*
   IBOC's entire 96–150 kbps payload, but with modern LDPC that closes ~2 dB lower, so the
   *same bitrate reaches further* (more coverage area).
 - **When the channel allows:** 16-QAM gives **172 kbps**, 64-QAM **356 kbps**, 256-QAM
@@ -88,7 +88,7 @@ the bitrate** — your choice, per-second, automatically.
 
 ## Audio
 
-| | HD Radio | DSCA-NG |
+| | HD Radio | Groundwave |
 |---|---|---|
 | Codec | HDC (proprietary, HE-AAC-derived) | **Opus 1.5** (open, royalty-free) |
 | HD1 / primary | ~96 kbps | transparent-class at 96–128 kbps using only QPSK/16-QAM |
@@ -99,13 +99,13 @@ At every bitrate that matters, Opus meets or beats HDC — and pays no license.
 
 ## The four-axis scorecard
 
-| Axis | HD Radio (hybrid IBOC) | DSCA-NG | Verdict |
+| Axis | HD Radio (hybrid IBOC) | Groundwave | Verdict |
 |---|---|---|---|
-| **Spectral use** | fixed ~0.7–1.1 net bits/Hz | adaptive 0.31–3.86 bits/Hz | DSCA-NG: more reach at iso-rate, 2–5× rate when SNR allows |
-| **FEC / coding** | convolutional (2002-era) | QC-LDPC + RS + ORBGRAND/BICM-ID | DSCA-NG: ~2 dB+ coding gain |
-| **Audio** | HDC, licensed | Opus 1.5 + DRED, open | DSCA-NG, clearly |
-| **Adaptation** | fixed service modes | AMC / VCM / hierarchical UEP | DSCA-NG: graceful, no cliff |
-| **Licensing** | Xperi royalties (broadcaster + receiver) | royalty-free top to bottom | DSCA-NG — the whole reason it exists |
+| **Spectral use** | fixed ~0.7–1.1 net bits/Hz | adaptive 0.31–3.86 bits/Hz | Groundwave: more reach at iso-rate, 2–5× rate when SNR allows |
+| **FEC / coding** | convolutional (2002-era) | QC-LDPC + RS + ORBGRAND/BICM-ID | Groundwave: ~2 dB+ coding gain |
+| **Audio** | HDC, licensed | Opus 1.5 + DRED, open | Groundwave, clearly |
+| **Adaptation** | fixed service modes | AMC / VCM / hierarchical UEP | Groundwave: graceful, no cliff |
+| **Licensing** | Xperi royalties (broadcaster + receiver) | royalty-free top to bottom | Groundwave — the whole reason it exists |
 
 ## Honest caveats
 
@@ -116,7 +116,7 @@ At every bitrate that matters, Opus meets or beats HDC — and pays no license.
   on paper the modern modem *should* win; that's almost the point.
 - The **256-QAM ceiling won't happen on a real SCA** — it's noise-limited; treat the
   high-modcod rows as the strong-signal headroom, not the operating point.
-- HD Radio is **complete, FCC-authorized, and has receivers**. DSCA-NG has none of that.
+- HD Radio is **complete, FCC-authorized, and has receivers**. Groundwave has none of that.
   This scorecard is about the *waveform and codec*, where it is genuinely years ahead — not
   about deployment readiness, where IBOC obviously leads.
 

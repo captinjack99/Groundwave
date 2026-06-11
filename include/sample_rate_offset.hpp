@@ -23,7 +23,7 @@
 #include <vector>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 struct SROConfig {
     float ema_alpha = 0.05f;  ///< EMA on slope estimate
@@ -88,4 +88,4 @@ private:
     float slope_ema_ = 0.f;
 };
 
-} // namespace dsca
+} // namespace gw

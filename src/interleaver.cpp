@@ -11,7 +11,7 @@
 #include <cmath>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 namespace {
 
@@ -138,4 +138,4 @@ void BitInterleaver::deinterleave(const float* in, float* out) const {
     }
 }
 
-} // namespace dsca
+} // namespace gw

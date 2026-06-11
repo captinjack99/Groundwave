@@ -38,7 +38,7 @@
 #include <string>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
@@ -1549,7 +1549,7 @@ int main(int argc, char** argv) {
         if (std::strcmp(argv[i], "--quick") == 0) quick = true;
     }
 
-    std::printf("=== DSCA-NG Integration Test ===\n");
+    std::printf("=== Groundwave Integration Test ===\n");
     auto start = std::chrono::steady_clock::now();
 
     auto stage = [](const char* name) {

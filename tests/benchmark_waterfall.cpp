@@ -46,7 +46,7 @@
 #include <string>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
@@ -297,7 +297,7 @@ int runFull(size_t frames_override) {
     const uint16_t fft = 256;
     const uint32_t sr = 48000;
 
-    std::printf("=== DSCA-NG BER/FER Waterfall Benchmark (full ladder) ===\n");
+    std::printf("=== Groundwave BER/FER Waterfall Benchmark (full ladder) ===\n");
     std::printf("FFT=%u  SR=%u  Watterson Doppler=%.1f Hz (2-tap, delay 3, "
                 "-3 dB each)\n", fft, sr, doppler_hz);
     std::printf("Sweep = [threshold-3 dB .. threshold+8 dB], step %.0f dB; "

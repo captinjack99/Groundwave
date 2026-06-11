@@ -21,7 +21,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace dsca {
+namespace gw {
 
 struct AMCEntry {
     Modulation mod;
@@ -59,7 +59,7 @@ public:
 
     /** Re-derive the threshold table (call after channel/encoder changes). */
     void rebuildTable() {
-        auto raw = computeAllThresholds();   // free function in dsca::
+        auto raw = computeAllThresholds();   // free function in gw::
         table_.clear();
         table_.reserve(raw.size());
         for (const auto& t : raw) {
@@ -168,4 +168,4 @@ private:
     float olla_bias_db_ = 0.f;   ///< OLLA accumulated SNR bias (SOTA #4)
 };
 
-} // namespace dsca
+} // namespace gw

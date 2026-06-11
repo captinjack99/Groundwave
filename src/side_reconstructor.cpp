@@ -11,7 +11,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace dsca {
+namespace gw {
 
 SideReconstructor::SideReconstructor(uint32_t sample_rate)
     : sample_rate_(sample_rate)
@@ -119,4 +119,4 @@ void SideReconstructor::designLowpass(Biquad& bq, float f0_hz) const {
     bq.reset();
 }
 
-} // namespace dsca
+} // namespace gw

@@ -11,10 +11,10 @@
 #include <QPushButton>
 #include <QLabel>
 
-namespace dsca {
+namespace gw {
 
 HelpDialog::HelpDialog(QWidget* parent) : QDialog(parent) {
-    setWindowTitle("DSCA-NG — Help");
+    setWindowTitle("Groundwave — Help");
     setMinimumSize(820, 620);
     buildUi();
 }
@@ -30,7 +30,7 @@ void HelpDialog::buildUi() {
     root->setContentsMargins(20, 18, 20, 16);
     root->setSpacing(14);
 
-    auto* title = new QLabel("DSCA-NG Help");
+    auto* title = new QLabel("Groundwave Help");
     title->setStyleSheet(
         "font-size: 22px; font-weight: 300; color: #F2F2F7; "
         "letter-spacing: 0.5px;");
@@ -74,7 +74,7 @@ QString HelpDialog::guideHtml() const {
 <h2 style="color:#F2F2F7; font-weight:300; margin-bottom:0;">User Guide</h2>
 <p style="color:#8E8E93;">A 5-minute orientation. Skim the headings; read what you need.</p>
 
-<h3 style="color:#0099FF;">1. The first time you run DSCA-NG</h3>
+<h3 style="color:#0099FF;">1. The first time you run Groundwave</h3>
 <p>The application opens in <b>software loopback</b> mode by default. The
 transmitter encodes audio into an OFDM signal; the receiver decodes the
 same signal back to audio — entirely inside the software, with no
@@ -282,15 +282,24 @@ QString HelpDialog::shortcutsHtml() const {
 <table cellpadding="6">
 <tr><td><code style="color:#0099FF;">F1</code></td><td>Open this Help dialog</td></tr>
 </table>
-<p style="color:#8E8E93;">Theme (Light / Dark) and panel layout are on the
-<b>View</b> menu.</p>
+<p style="color:#8E8E93;">Theme (Light / Dark), spectrum display options,
+and <b>Operate mode</b> (hides the engineering panels) are on the
+<b>View</b> menu; Operate mode is also on the toolbar. Device and
+hierarchical configuration open as floating palettes — the app keeps
+running while they're up.</p>
 
 <h3 style="color:#0099FF;">Spectrum Widget</h3>
 <table cellpadding="6">
-<tr><td>Mouse wheel</td><td>Zoom the dB (amplitude) range; disables auto-range</td></tr>
+<tr><td>Drag band lines</td><td>Retune: center line moves Fc, either edge resizes the bandwidth (engine retunes on release)</td></tr>
+<tr><td>Hover</td><td>Frequency + level readout under the pointer</td></tr>
 <tr><td>Click</td><td>Place primary cursor (frequency readout)</td></tr>
 <tr><td>Shift + click</td><td>Place delta cursor (Δf readout)</td></tr>
-<tr><td>View menu</td><td>Clear cursors, toggle FCC mask / waterfall</td></tr>
+<tr><td>Right-drag</td><td>Box-zoom the frequency axis</td></tr>
+<tr><td>Ctrl + wheel</td><td>Zoom the frequency axis about the pointer</td></tr>
+<tr><td>Middle / Ctrl-drag</td><td>Pan the zoomed frequency window</td></tr>
+<tr><td>Mouse wheel</td><td>Zoom the dB (amplitude) range; disables auto-range</td></tr>
+<tr><td>Double-click</td><td>Full frequency span + re-enable auto-range</td></tr>
+<tr><td>View menu</td><td>Cursors, FCC mask, peak hold, averaging, colormap, auto-range</td></tr>
 </table>
 
 <h3 style="color:#0099FF;">Constellation Widget</h3>
@@ -360,7 +369,7 @@ In asymmetric modes the HP/LP frame counters are derived from the
 same codeword, so they show identical confidence.</p>
 
 <h3 style="color:#0099FF;">App crashes on startup</h3>
-<p>Run from a terminal: <code>dsca_ng.exe 2&gt; engine.log</code> and check
+<p>Run from a terminal: <code>groundwave.exe 2&gt; engine.log</code> and check
 <code>engine.log</code> for the panic message. Common causes: missing
 Qt6 DLLs (run <code>windeployqt</code>), or Opus library mismatch
 (reinstall the matching version from vcpkg).</p>
@@ -374,10 +383,10 @@ to bump the version field if the schema is compatible.</p>
 
 QString HelpDialog::aboutHtml() const {
     return R"HTML(
-<h2 style="color:#F2F2F7; font-weight:300; margin-bottom:0;">About DSCA-NG</h2>
+<h2 style="color:#F2F2F7; font-weight:300; margin-bottom:0;">About Groundwave</h2>
 
 <p style="color:#C7C7CC; font-size:13px;">
-<b>DSCA-NG — Digital SCA Next Generation</b><br/>
+<b>Groundwave — digital voice, down to earth</b><br/>
 A software-defined OFDM digital radio modem for FM SCA / soundcard-
 audio digital broadcasting. Built end-to-end in C++17 with Qt 6 for
 the GUI and miniaudio + Opus for I/O.</p>
@@ -409,9 +418,9 @@ All build at <code>/W4 /WX /permissive-</code>.</p>
 (optional, GPL). Codebase under the project's own license.</p>
 
 <p style="color:#48484E; font-size:10px; margin-top:24px;">
-Built )HTML" DSCA_BUILD_DATE R"HTML( UTC · Qt )HTML" QT_VERSION_STR R"HTML(
+Built )HTML" GW_BUILD_DATE R"HTML( UTC · Qt )HTML" QT_VERSION_STR R"HTML(
 </p>
 )HTML";
 }
 
-} // namespace dsca
+} // namespace gw

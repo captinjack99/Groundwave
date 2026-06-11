@@ -1,6 +1,6 @@
 /**
  * @file types.hpp
- * @brief Core type definitions for DSCA-NG v2
+ * @brief Core type definitions for Groundwave v2
  *
  * Single source of truth for all types, enums, constants, and
  * configuration structures used throughout the system.
@@ -29,7 +29,7 @@
     #define M_PI 3.14159265358979323846
 #endif
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Fundamental Types
@@ -372,4 +372,4 @@ struct ModemStats {
     bool       lp_locked          = false; ///< Recent LP frame succeeded
 };
 
-} // namespace dsca
+} // namespace gw

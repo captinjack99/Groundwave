@@ -17,7 +17,7 @@
 #include <QSlider>
 #include <QLabel>
 
-namespace dsca {
+namespace gw {
 
 class TuningPanel : public QWidget {
     Q_OBJECT
@@ -25,7 +25,7 @@ public:
     explicit TuningPanel(AppState& state, QWidget* parent = nullptr);
 
 public slots:
-    void onStatsUpdated(dsca::ModemStats stats);
+    void onStatsUpdated(gw::ModemStats stats);
     void refreshFromState();
 
 signals:
@@ -54,4 +54,4 @@ private:
     bool updating_ = false;
 };
 
-} // namespace dsca
+} // namespace gw

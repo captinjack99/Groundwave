@@ -31,7 +31,7 @@
 #include <vector>
 #include <memory>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Configuration
@@ -124,4 +124,4 @@ private:
     ComplexBuf            clip_time_;
 };
 
-} // namespace dsca
+} // namespace gw

@@ -26,7 +26,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // I/Q Upconverter (TX: complex baseband → real passband)
@@ -171,4 +171,4 @@ private:
     float alpha_release_;
 };
 
-} // namespace dsca
+} // namespace gw

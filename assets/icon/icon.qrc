@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/icon">
+        <file>groundwave_256.png</file>
+        <file>groundwave_32.png</file>
+    </qresource>
+</RCC>

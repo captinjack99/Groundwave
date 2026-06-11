@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DSCA-NG application icon, SMALL-SIZE variant (16/24/32 px rasters).
+  Same carrier-comb mark as groundwave.svg but with six fatter bars and a
+  wider DC notch so the shape survives 16x16: at that size the full
+  eight-bar mark's 6/120 bars fall below one device pixel. No baseline
+  (sub-pixel noise at small sizes).
+-->
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="120" height="120" rx="26" fill="#0A0A0D"/>
+  <rect x="16" y="64" width="12" height="24" rx="5" fill="#00B4FF"/>
+  <rect x="30" y="46" width="12" height="42" rx="5" fill="#00B4FF"/>
+  <rect x="44" y="30" width="12" height="58" rx="5" fill="#00B4FF"/>
+  <rect x="64" y="30" width="12" height="58" rx="5" fill="#00B4FF"/>
+  <rect x="78" y="46" width="12" height="42" rx="5" fill="#D2823F"/>
+  <rect x="92" y="64" width="12" height="24" rx="5" fill="#00B4FF"/>
+</svg>

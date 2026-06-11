@@ -27,7 +27,7 @@
 #include <vector>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 static constexpr size_t MAX_STREAMS = 8;
 
@@ -643,4 +643,4 @@ private:
     std::vector<float> dred_buf_;    // DRED burst-recovery output
 };
 
-} // namespace dsca
+} // namespace gw

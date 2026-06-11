@@ -42,7 +42,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 class SideReconstructor {
 public:
@@ -116,4 +116,4 @@ private:
     Biquad lp_;  // 12 kHz low-pass (band-limit synthetic stereo)
 };
 
-} // namespace dsca
+} // namespace gw

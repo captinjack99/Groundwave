@@ -9,7 +9,7 @@
 #include <QCheckBox>
 #include <QLabel>
 
-namespace dsca {
+namespace gw {
 
 class AlarmConfigDialog : public QDialog {
     Q_OBJECT
@@ -40,4 +40,4 @@ private:
     QLabel*         ber_preview_;
 };
 
-} // namespace dsca
+} // namespace gw

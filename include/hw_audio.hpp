@@ -8,7 +8,7 @@
  *   - Capture device: soundcard input → writes to RX ring buffer
  *   - Device enumeration for GUI device selection
  *
- * Enable with DSCA_ENABLE_AUDIO in CMake. Without it, this header
+ * Enable with GW_ENABLE_AUDIO in CMake. Without it, this header
  * provides stubs that always return false (loopback-only mode).
  *
  * Thread model: miniaudio callbacks run on dedicated audio threads.
@@ -23,7 +23,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace dsca {
+namespace gw {
 
 struct AudioDeviceInfo {
     std::string name;
@@ -38,11 +38,11 @@ struct HWAudioConfig {
     int      capture_device  = -1;    ///< -1 = system default
 };
 
-#ifdef DSCA_ENABLE_AUDIO
+#ifdef GW_ENABLE_AUDIO
 
 // Note: miniaudio's ma_device/ma_context are global-scope C structs. We
-// don't forward-declare them here because doing so inside `namespace dsca`
-// would create incompatible `dsca::ma_context` shadows that conflict with
+// don't forward-declare them here because doing so inside `namespace gw`
+// would create incompatible `gw::ma_context` shadows that conflict with
 // the real ones at link/use time. The pimpl `Impl` lives in hw_audio.cpp
 // and references the global types directly via `::ma_context`.
 
@@ -115,7 +115,7 @@ public:
                                                 int capture_device) const;
 
     // Pimpl is public so the file-scope miniaudio data callback (which must
-    // sit outside `namespace dsca` to match ma_device_data_proc's signature)
+    // sit outside `namespace gw` to match ma_device_data_proc's signature)
     // can access Impl members. The struct definition is private to the cpp.
     struct Impl;
 
@@ -127,7 +127,7 @@ private:
     std::vector<AudioDeviceInfo> cap_devices_;
 };
 
-#else // !DSCA_ENABLE_AUDIO
+#else // !GW_ENABLE_AUDIO
 
 // Stub when hardware audio is not compiled in
 class HWAudioDevice {
@@ -157,6 +157,6 @@ public:
     }
 };
 
-#endif // DSCA_ENABLE_AUDIO
+#endif // GW_ENABLE_AUDIO
 
-} // namespace dsca
+} // namespace gw

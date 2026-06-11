@@ -20,7 +20,7 @@
 #include <algorithm>
 #include <memory>
 
-namespace dsca {
+namespace gw {
 
 class CICDecimator {
 public:
@@ -102,4 +102,4 @@ private:
     std::unique_ptr<CICDecimator> q_partner_; ///< For complex-input dual-decimation
 };
 
-} // namespace dsca
+} // namespace gw

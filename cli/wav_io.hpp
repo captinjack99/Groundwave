@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace dsca {
+namespace gw {
 namespace wav {
 
 struct WavInfo {
@@ -157,4 +157,4 @@ inline bool writeFloat16(const std::string& path, const float* pcm,
 }
 
 } // namespace wav
-} // namespace dsca
+} // namespace gw

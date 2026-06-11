@@ -37,7 +37,7 @@
 #include <array>
 #include <algorithm>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Naming helpers
@@ -610,4 +610,4 @@ inline LinkBudget computeLinkBudget(
     return lb;
 }
 
-} // namespace dsca
+} // namespace gw

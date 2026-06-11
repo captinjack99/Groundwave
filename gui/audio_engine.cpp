@@ -13,12 +13,13 @@
 
 #include "audio_engine.hpp"
 #include "../include/polyphase.hpp"
+#include <QCoreApplication>
 #include <cmath>
 #include <cstring>
 #include <algorithm>
 #include <set>
 
-namespace dsca {
+namespace gw {
 
 // The AUDIO content rate — Opus codec, test-tone synthesis, decoded-stream
 // playback/recording, and mic capture. Fixed at 48 kHz (a rate Opus
@@ -120,19 +121,34 @@ void AudioEngine::shutdown() {
             running_.store(false);
             emit engineStopped();
         }
+        // Push this object back to the GUI thread from HERE — the owner
+        // thread — as the final act before quitting. A push from the
+        // owner is always legal; the old pull from shutdown() (GUI side,
+        // after wait()) raced the thread's finish bookkeeping: on rapid
+        // start→stop, isRunning() already read false while Qt's thread
+        // data wasn't fully torn down, and the pull was refused with
+        // "QObject::moveToThread: Current thread is not the object's
+        // thread / Cannot move to target thread" (gui_walker reproduced
+        // it on every Start→Stop pair). This lambda runs in every
+        // shutdown interleaving — full teardown, or bare quit when the
+        // started-lambda bailed on shutdown_requested_ — so the handoff
+        // is unconditional.
+        moveToThread(QCoreApplication::instance()->thread());
         thread_.quit();
     }, Qt::QueuedConnection);
 
-    // Wait for the engine thread to FULLY stop before moving this object back
-    // to the GUI thread / allowing destruction. Proceeding while the engine
-    // thread is still inside teardownDSP() (which may block on a device close)
-    // would be a use-after-free. If the first wait times out, give teardown
-    // more time rather than racing destruction.
+    // Wait for the engine thread to FULLY stop before allowing destruction.
+    // Proceeding while the engine thread is still inside teardownDSP()
+    // (which may block on a device close) would be a use-after-free. If the
+    // first wait times out, give teardown more time rather than racing
+    // destruction.
     if (!thread_.wait(5000)) {
         thread_.wait(10000);
     }
 
-    // Only move back if the thread actually stopped (guards the UAF above).
+    // Belt-and-braces: if the queued handoff could not run (it always
+    // should — exec() drains the queue after the started-lambda), fall
+    // back to the pull, which is legal once the thread has fully stopped.
     if (!thread_.isRunning() && thread() != QThread::currentThread()) {
         moveToThread(QThread::currentThread());
     }
@@ -2697,4 +2713,4 @@ std::vector<AudioDeviceInfo> AudioEngine::enumerateCaptureDevices() const {
     return probe.captureDevices();
 }
 
-} // namespace dsca
+} // namespace gw

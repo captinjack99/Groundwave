@@ -28,7 +28,7 @@
 #include <QToolButton>
 #include <array>
 
-namespace dsca {
+namespace gw {
 
 class StreamPanel : public QWidget {
     Q_OBJECT
@@ -88,4 +88,4 @@ private:
     class AudioEngine*           engine_   = nullptr;
 };
 
-} // namespace dsca
+} // namespace gw

@@ -14,7 +14,7 @@
 class QTabWidget;
 class QTextBrowser;
 
-namespace dsca {
+namespace gw {
 
 class HelpDialog : public QDialog {
     Q_OBJECT
@@ -37,4 +37,4 @@ private:
     QTabWidget* tabs_ = nullptr;
 };
 
-} // namespace dsca
+} // namespace gw

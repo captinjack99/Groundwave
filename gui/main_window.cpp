@@ -39,8 +39,13 @@
 #include <QKeySequence>
 #include <QPixmap>
 #include <QPushButton>
+#include <QActionGroup>
+#include <QToolBar>
+#include <QStyle>
+#include <QTimer>
+#include <QHBoxLayout>
 
-namespace dsca {
+namespace gw {
 
 MainWindow::MainWindow(AppState& state, QWidget* parent)
     : QMainWindow(parent)
@@ -48,13 +53,12 @@ MainWindow::MainWindow(AppState& state, QWidget* parent)
     , bridge_(state, this)
     , engine_(state, bridge_)
 {
-    setWindowTitle("DSCA-NG  v2.0  —  Digital Radio Modem");
-    // Default and minimum sizes tuned so all docks have room to breathe
-    // and rows don't collapse below the controls' natural widths. On
-    // smaller screens (laptops at 1366×768) the user can still resize
-    // smaller — minimum is set so the layout stays legible but starts
-    // forcing scroll bars on heavy panels.
-    setMinimumSize(1200, 780);
+    setWindowTitle("Groundwave  v2.0");
+    // Minimum sized to fit a 1366×768 laptop at 100% scale (with room for
+    // the taskbar) — heavy panels grow scroll bars below their natural
+    // width instead of forcing a giant window. Default opens comfortably
+    // larger on big displays.
+    setMinimumSize(1024, 680);
     resize(1680, 980);
 
     buildLayout();
@@ -62,9 +66,82 @@ MainWindow::MainWindow(AppState& state, QWidget* parent)
     buildStatusBar();
     buildKeyboardShortcuts();
 
+    // ---- Toolbar: one-click access to the actions people hunt the menus
+    // for. Deliberately stateless triggers only (start/stop/save/load/
+    // export/help) — the stateful TX toggle stays on the TX panel, which
+    // owns that logic. ----
+    {
+        auto* tb = addToolBar("Main");
+        tb->setObjectName("mainToolbar");   // restoreState() needs a name
+        tb->setMovable(false);
+        tb->setIconSize(QSize(16, 16));
+        auto std_icon = [this](QStyle::StandardPixmap sp) {
+            return this->style()->standardIcon(sp);
+        };
+        auto* a_start = tb->addAction(
+            std_icon(QStyle::SP_MediaPlay), "Start engine",
+            [this]() { engine_.startup(); });
+        a_start->setToolTip("Start the modem engine (F9)");
+        auto* a_stop = tb->addAction(
+            std_icon(QStyle::SP_MediaStop), "Stop engine",
+            [this]() { engine_.shutdown(); });
+        a_stop->setToolTip("Stop the modem engine (F10)");
+        tb->addSeparator();
+        auto* a_save = tb->addAction(
+            std_icon(QStyle::SP_DialogSaveButton), "Save config",
+            [this]() { saveConfigInteractive(); });
+        a_save->setToolTip("Save configuration to JSON (Ctrl+S)");
+        auto* a_load = tb->addAction(
+            std_icon(QStyle::SP_DialogOpenButton), "Load config",
+            [this]() { loadConfigInteractive(); });
+        a_load->setToolTip("Load configuration from JSON (Ctrl+O)");
+        tb->addSeparator();
+        auto* a_png = tb->addAction(
+            std_icon(QStyle::SP_FileDialogContentsView), "Export spectrum",
+            [this]() { exportSpectrumPNG(); });
+        a_png->setToolTip("Export spectrum + waterfall as PNG (Ctrl+E)");
+        auto* a_help = tb->addAction(
+            std_icon(QStyle::SP_DialogHelpButton), "Help",
+            [this]() {
+                // Same modeless pattern as the Help menu.
+                auto* h = new HelpDialog(this);
+                h->setAttribute(Qt::WA_DeleteOnClose);
+                h->showTab(0);
+                h->show();
+            });
+        a_help->setToolTip("Open the operator guide (F1)");
+        tb->addSeparator();
+        // The Operate-mode toggle is the View-menu QAction itself (added
+        // there by buildMenuBar, which runs before this block) — one
+        // action, two surfaces, always in sync.
+        if (auto* op = menuBar()->findChild<QAction*>("act_operate")) {
+            tb->addAction(op);
+        }
+    }
+
     // ---- Wire DataBridge signals to widgets ----
     connect(&bridge_, &DataBridge::spectrumReady,
             spectrum_widget_, &SpectrumWidget::onSpectrumReady);
+
+    // Drag-to-tune: the spectrum band overlay edits Fc/BW in AppState
+    // live during the drag; on release it fires ONE engine rebuild and
+    // refreshes every panel that displays those fields.
+    connect(spectrum_widget_, &SpectrumWidget::tuneChanged, [this]() {
+        float fc, bw;
+        {
+            std::lock_guard<std::mutex> lock(state_.mtx);
+            fc = state_.modem.center_freq;
+            bw = state_.modem.signal_bw;
+        }
+        if (tx_panel_)          tx_panel_->refreshFromState();
+        if (info_panel_)        info_panel_->refresh();
+        if (link_budget_panel_) link_budget_panel_->recompute();
+        engine_.onConfigChanged();
+        statusBar()->showMessage(
+            QString("Tuned: Fc %1 kHz, BW %2 kHz")
+                .arg(fc / 1000.f, 0, 'f', 2)
+                .arg(bw / 1000.f, 0, 'f', 2), 3000);
+    });
     connect(&bridge_, &DataBridge::constellationReady,
             constellation_widget_, &ConstellationWidget::onConstellationReady);
     connect(&bridge_, &DataBridge::metersUpdated,
@@ -76,12 +153,12 @@ MainWindow::MainWindow(AppState& state, QWidget* parent)
     connect(&bridge_, &DataBridge::alarmsUpdated,
             alarm_panel_, &AlarmPanel::onAlarmsUpdated);
     connect(&bridge_, &DataBridge::statsUpdated,
-            [this](dsca::ModemStats s) {
+            [this](gw::ModemStats s) {
         // Update status bar — full FSM state name (Searching/Acquiring/Locked/
         // Tracking/Lost) instead of just locked/unlocked, so the user can see
         // intermediate transitions during acquisition or lock loss.
         status_snr_->setText(QString("SNR  %1 dB").arg(s.snr_db, 0, 'f', 1));
-        const char* name = dsca::syncStateName(s.sync_state);
+        const char* name = gw::syncStateName(s.sync_state);
         bool good = (s.sync_state == SyncState::Locked ||
                      s.sync_state == SyncState::Tracking);
         bool bad  = (s.sync_state == SyncState::Lost);
@@ -240,7 +317,7 @@ MainWindow::MainWindow(AppState& state, QWidget* parent)
 
     // ---- Squelch + PAPR readout on the meter widget ----
     connect(&bridge_, &DataBridge::statsUpdated,
-            this, [this](dsca::ModemStats s) {
+            this, [this](gw::ModemStats s) {
                 meter_widget_->setTxPapr(s.papr_tx_db);
                 std::lock_guard<std::mutex> lock(state_.mtx);
                 meter_widget_->setSquelchThreshold(
@@ -248,16 +325,141 @@ MainWindow::MainWindow(AppState& state, QWidget* parent)
             });
 
     // Restore layout
-    QSettings settings("DSCA-NG", "MainWindow");
+    QSettings settings("Groundwave", "MainWindow");
     if (settings.contains("geometry"))
         restoreGeometry(settings.value("geometry").toByteArray());
     if (settings.contains("windowState"))
         restoreState(settings.value("windowState").toByteArray());
 
+    // Restore persisted UI preferences (engine toggles + view options)
+    // BEFORE the engine starts, so the restored engine config is what the
+    // first initDSP sees.
+    restoreUiPrefs();
+
     bridge_.start(33);   // ~30 fps
 
     // Start audio engine
     engine_.startup();
+
+    // First-run welcome card (once; re-openable via Help → Welcome Tour…).
+    // Deferred so it pops over the shown window, not before it.
+    {
+        QSettings s("Groundwave", "MainWindow");
+        if (!s.value("tour/shown", false).toBool()) {
+            s.setValue("tour/shown", true);
+            QTimer::singleShot(500, this, [this]() { showWelcomeTour(); });
+        }
+    }
+}
+
+// =========================================================================
+// UI preference persistence
+// =========================================================================
+
+void MainWindow::restoreUiPrefs() {
+    QSettings s("Groundwave", "MainWindow");
+    // Checkable menu actions: restoring via setChecked() fires the same
+    // toggled handler the user would, so engine config and widgets follow.
+    const struct { const char* name; const char* key; } toggles[] = {
+        {"act_orbgrand", "engine/orbgrand"},
+        {"act_awgn20",   "engine/awgn20"},
+        {"act_mmse",     "engine/mmse"},
+        {"act_pwl",      "engine/pwl"},
+        {"act_dd",       "engine/dd"},
+        {"act_bicm",     "engine/bicm"},
+        {"act_papr",     "engine/papr"},
+        {"act_rs",       "engine/rs"},
+        {"act_mask",     "view/mask"},
+        {"act_evm",      "view/evm"},
+        {"act_theme",    "view/theme"},
+        {"act_peakhold", "view/peakhold"},
+        {"act_avg",      "view/avg"},
+        {"act_autorange","view/autorange"},
+        {"act_operate",  "view/operate"},
+    };
+    for (const auto& t : toggles) {
+        if (!s.contains(t.key)) continue;
+        if (auto* a = menuBar()->findChild<QAction*>(t.name)) {
+            a->setChecked(s.value(t.key).toBool());
+        }
+    }
+
+    // Audio devices, persisted by NAME (indices shift across reboots and
+    // hot-plug). Resolve against a fresh enumeration; if a saved device
+    // is gone, stay in loopback rather than TX-ing into whatever device
+    // inherited the index.
+    if (s.value("audio/hw_on", false).toBool()) {
+        const QString want_pb  = s.value("audio/pb_name").toString();
+        const QString want_cap = s.value("audio/cap_name").toString();
+        HWAudioDevice probe;
+        if (probe.init()) {
+            auto resolve = [](const std::vector<AudioDeviceInfo>& devs,
+                              const QString& name) {
+                if (name.isEmpty()) return -1;   // system default
+                for (size_t i = 0; i < devs.size(); ++i) {
+                    if (QString::fromStdString(devs[i].name) == name)
+                        return static_cast<int>(i);
+                }
+                return -2;                       // saved device missing
+            };
+            const int pb  = resolve(probe.playbackDevices(), want_pb);
+            const int cap = resolve(probe.captureDevices(), want_cap);
+            if (pb != -2 && cap != -2) {
+                auto cfg = engine_.engineConfig();
+                cfg.use_hw_audio    = true;
+                cfg.playback_device = pb;
+                cfg.capture_device  = cap;
+                engine_.setEngineConfig(cfg);
+            } else {
+                statusBar()->showMessage(
+                    "Saved audio device not found — starting in loopback",
+                    5000);
+            }
+        }
+    }
+    if (auto* g = menuBar()->findChild<QActionGroup*>("grp_colormap")) {
+        int cm = s.value("view/colormap", 0).toInt();
+        for (QAction* a : g->actions()) {
+            if (a->data().toInt() == cm) { a->setChecked(true); break; }
+        }
+        spectrum_widget_->setColormap(cm);
+    }
+    // Manual dB range only matters when auto-range is off.
+    if (!s.value("view/autorange", true).toBool() &&
+        s.contains("view/dbmin") && s.contains("view/dbmax")) {
+        spectrum_widget_->setDbRange(s.value("view/dbmin").toFloat(),
+                                     s.value("view/dbmax").toFloat());
+    }
+}
+
+void MainWindow::saveUiPrefs() {
+    QSettings s("Groundwave", "MainWindow");
+    const struct { const char* name; const char* key; } toggles[] = {
+        {"act_orbgrand", "engine/orbgrand"},
+        {"act_awgn20",   "engine/awgn20"},
+        {"act_mmse",     "engine/mmse"},
+        {"act_pwl",      "engine/pwl"},
+        {"act_dd",       "engine/dd"},
+        {"act_bicm",     "engine/bicm"},
+        {"act_papr",     "engine/papr"},
+        {"act_rs",       "engine/rs"},
+        {"act_mask",     "view/mask"},
+        {"act_evm",      "view/evm"},
+        {"act_theme",    "view/theme"},
+        {"act_peakhold", "view/peakhold"},
+        {"act_avg",      "view/avg"},
+        {"act_autorange","view/autorange"},
+        {"act_operate",  "view/operate"},
+    };
+    for (const auto& t : toggles) {
+        if (auto* a = menuBar()->findChild<QAction*>(t.name)) {
+            s.setValue(t.key, a->isChecked());
+        }
+    }
+    s.setValue("view/colormap", spectrum_widget_->colormap());
+    s.setValue("view/dbmin", spectrum_widget_->minDb());
+    s.setValue("view/dbmax", spectrum_widget_->maxDb());
+    // (audio/* keys are written at Device-palette apply time.)
 }
 
 // =========================================================================
@@ -515,21 +717,50 @@ void MainWindow::buildMenuBar() {
         });
         dlg.exec();
     });
-    preset_menu->addSeparator();
-    for (size_t i = 0; i < NUM_PRESETS; ++i) {
-        if (!state_.presets[i].valid) continue;
-        QString name = QString("%1: %2").arg(i).arg(state_.presets[i].name);
-        preset_menu->addAction(name, [this, i]() {
-            {
-                std::lock_guard<std::mutex> lock(state_.mtx);
-                if (!state_.presets[i].valid) return;
-                state_.applyPreset(static_cast<int>(i));
+    QAction* preset_list_anchor = preset_menu->addSeparator();
+    // Slot list is rebuilt on every menu open so renames and newly-saved
+    // slots appear without a restart (it used to be built once at startup,
+    // so "Save Here" into an empty slot never showed up). Labels are
+    // 1-based to match the Ctrl+1..8 shortcuts.
+    connect(preset_menu, &QMenu::aboutToShow,
+            [this, preset_menu, preset_list_anchor]() {
+        // Drop everything after the anchor separator.
+        const auto actions = preset_menu->actions();
+        bool past_anchor = false;
+        for (QAction* a : actions) {
+            if (past_anchor) preset_menu->removeAction(a);
+            if (a == preset_list_anchor) past_anchor = true;
+        }
+        struct Row { size_t idx; QString label; };
+        std::vector<Row> rows;
+        {
+            std::lock_guard<std::mutex> lock(state_.mtx);
+            for (size_t i = 0; i < NUM_PRESETS; ++i) {
+                if (!state_.presets[i].valid) continue;
+                rows.push_back({i, QString("%1: %2\tCtrl+%1")
+                                       .arg(i + 1)
+                                       .arg(state_.presets[i].name)});
             }
-            tx_panel_->refreshFromState();
-            info_panel_->refresh();
-            engine_.onConfigChanged();
-        });
-    }
+        }
+        for (const auto& row : rows) {
+            const size_t i = row.idx;
+            preset_menu->addAction(row.label, [this, i]() {
+                {
+                    std::lock_guard<std::mutex> lock(state_.mtx);
+                    if (!state_.presets[i].valid) return;
+                    state_.applyPreset(static_cast<int>(i));
+                }
+                tx_panel_->refreshFromState();
+                info_panel_->refresh();
+                engine_.onConfigChanged();
+                if (state_.active_preset_slot >= 0) {
+                    status_preset_->setText(
+                        state_.presets[static_cast<size_t>(
+                            state_.active_preset_slot)].name);
+                }
+            });
+        }
+    });
 
     // Alarms
     auto* alarm_menu = menuBar()->addMenu("Alarms");
@@ -549,13 +780,14 @@ void MainWindow::buildMenuBar() {
     // View
     auto* view_menu = menuBar()->addMenu("View");
     view_menu->addAction("Reset Layout", [this]() {
-        QSettings settings("DSCA-NG", "MainWindow");
+        QSettings settings("Groundwave", "MainWindow");
         settings.remove("geometry");
         settings.remove("windowState");
         resize(1440, 860);
     });
     view_menu->addSeparator();
     auto* mask_action = view_menu->addAction("Show FCC §73.319 mask");
+    mask_action->setObjectName("act_mask");
     mask_action->setCheckable(true);
     connect(mask_action, &QAction::toggled, [this](bool on) {
         spectrum_widget_->setShowMask(on);
@@ -565,12 +797,88 @@ void MainWindow::buildMenuBar() {
         spectrum_widget_->clearCursors();
     });
     auto* evm_action = view_menu->addAction("Constellation EVM-detail mode");
+    evm_action->setObjectName("act_evm");
     evm_action->setCheckable(true);
     connect(evm_action, &QAction::toggled, [this](bool on) {
         constellation_widget_->setEvmDetailMode(on);
     });
+
+    view_menu->addSeparator();
+
+    // --- Spectrum display options (all persisted) ---
+    auto* autorange_action = view_menu->addAction("Spectrum auto range");
+    autorange_action->setObjectName("act_autorange");
+    autorange_action->setCheckable(true);
+    autorange_action->setChecked(spectrum_widget_->autoRange());
+    autorange_action->setToolTip(
+        "Track the dB range to the live signal. Scrolling the spectrum "
+        "switches to a fixed manual range; double-click the plot (or "
+        "re-check this) to hand control back.");
+    connect(autorange_action, &QAction::toggled, [this](bool on) {
+        spectrum_widget_->setAutoRange(on);
+    });
+    // Wheel-zoom drops out of auto range; double-click re-enables. Keep
+    // the menu check in sync with both.
+    connect(spectrum_widget_, &SpectrumWidget::dbRangeChanged,
+            [autorange_action](float, float) {
+        autorange_action->setChecked(false);
+    });
+    connect(spectrum_widget_, &SpectrumWidget::autoRangeChanged,
+            autorange_action, &QAction::setChecked);
+
+    auto* peak_action = view_menu->addAction("Peak hold trace");
+    peak_action->setObjectName("act_peakhold");
+    peak_action->setCheckable(true);
+    peak_action->setToolTip(
+        "Overlay a slowly-decaying maximum trace (amber) over the live "
+        "spectrum — catches transients and intermittent carriers.");
+    connect(peak_action, &QAction::toggled, [this](bool on) {
+        spectrum_widget_->setPeakHold(on);
+    });
+
+    auto* avg_action = view_menu->addAction("Trace averaging");
+    avg_action->setObjectName("act_avg");
+    avg_action->setCheckable(true);
+    avg_action->setToolTip(
+        "Exponential moving average of the spectrum trace — steadies the "
+        "noise floor for eyeballing levels (the waterfall stays live).");
+    connect(avg_action, &QAction::toggled, [this](bool on) {
+        spectrum_widget_->setAveraging(on);
+    });
+
+    auto* cmap_menu = view_menu->addMenu("Waterfall colormap");
+    auto* cmap_group = new QActionGroup(cmap_menu);
+    cmap_group->setObjectName("grp_colormap");
+    const char* cmap_names[] = {"Classic", "Turbo", "Viridis"};
+    for (int ci = 0; ci < 3; ++ci) {
+        auto* a = cmap_menu->addAction(cmap_names[ci]);
+        a->setCheckable(true);
+        a->setChecked(ci == spectrum_widget_->colormap());
+        a->setData(ci);
+        cmap_group->addAction(a);
+    }
+    connect(cmap_group, &QActionGroup::triggered, [this](QAction* a) {
+        spectrum_widget_->setColormap(a->data().toInt());
+    });
+
+    view_menu->addSeparator();
+
+    // Operate vs Engineer: progressive disclosure. The same QAction also
+    // lives on the toolbar, so the two stay in sync for free.
+    auto* operate_action = view_menu->addAction("Operate mode");
+    operate_action->setObjectName("act_operate");
+    operate_action->setCheckable(true);
+    operate_action->setToolTip(
+        "Hide the engineering docks (Tuning, Diagnostics, Streams + "
+        "Scope) and keep the operating surface: spectrum, constellation, "
+        "TX controls and status. Uncheck for the full cockpit.");
+    connect(operate_action, &QAction::toggled, [this](bool on) {
+        setOperateMode(on);
+    });
+
     view_menu->addSeparator();
     auto* theme_action = view_menu->addAction("Light Theme");
+    theme_action->setObjectName("act_theme");
     theme_action->setCheckable(true);
     connect(theme_action, &QAction::toggled, [this](bool light) {
         QApplication* app = qobject_cast<QApplication*>(QCoreApplication::instance());
@@ -599,6 +907,7 @@ void MainWindow::buildMenuBar() {
     engine_menu->addSeparator();
 
     auto* orbgrand_action = engine_menu->addAction("Use ORBGRAND Decoder");
+    orbgrand_action->setObjectName("act_orbgrand");
     orbgrand_action->setCheckable(true);
     orbgrand_action->setChecked(true);
     orbgrand_action->setToolTip(
@@ -617,6 +926,7 @@ void MainWindow::buildMenuBar() {
     });
 
     auto* awgn_action = engine_menu->addAction("Loopback AWGN (20 dB)");
+    awgn_action->setObjectName("act_awgn20");
     awgn_action->setCheckable(true);
     awgn_action->setChecked(false);
     connect(awgn_action, &QAction::toggled, [this](bool on) {
@@ -631,6 +941,7 @@ void MainWindow::buildMenuBar() {
     engine_menu->addSeparator();
 
     auto* mmse_action = engine_menu->addAction("MMSE Channel Estimation");
+    mmse_action->setObjectName("act_mmse");
     mmse_action->setCheckable(true);
     mmse_action->setChecked(false);
     connect(mmse_action, &QAction::toggled, [this](bool on) {
@@ -644,6 +955,7 @@ void MainWindow::buildMenuBar() {
     });
 
     auto* pwl_action = engine_menu->addAction("PWL LLR Demapper");
+    pwl_action->setObjectName("act_pwl");
     pwl_action->setCheckable(true);
     pwl_action->setChecked(true);
     connect(pwl_action, &QAction::toggled, [this](bool on) {
@@ -656,6 +968,7 @@ void MainWindow::buildMenuBar() {
     });
 
     auto* dd_action = engine_menu->addAction("Decision-Directed Channel Est.");
+    dd_action->setObjectName("act_dd");
     dd_action->setCheckable(true);
     dd_action->setChecked(false);
     dd_action->setToolTip(
@@ -674,6 +987,7 @@ void MainWindow::buildMenuBar() {
     });
 
     auto* bicm_action = engine_menu->addAction("BICM-ID (Iterative Demap)");
+    bicm_action->setObjectName("act_bicm");
     bicm_action->setCheckable(true);
     bicm_action->setChecked(false);
     bicm_action->setToolTip(
@@ -694,6 +1008,7 @@ void MainWindow::buildMenuBar() {
     engine_menu->addSeparator();
 
     auto* papr_action = engine_menu->addAction("PAPR Reduction (TR)");
+    papr_action->setObjectName("act_papr");
     papr_action->setCheckable(true);
     papr_action->setChecked(false);
     connect(papr_action, &QAction::toggled, [this](bool on) {
@@ -710,6 +1025,7 @@ void MainWindow::buildMenuBar() {
     });
 
     auto* rs_action = engine_menu->addAction("Reed-Solomon Outer Code");
+    rs_action->setObjectName("act_rs");
     rs_action->setCheckable(true);
     rs_action->setChecked(state_.modem.enable_rs_outer);
     rs_action->setToolTip(
@@ -747,9 +1063,9 @@ void MainWindow::buildMenuBar() {
     connect(vcm_action, &QAction::toggled, [this](bool on) {
         auto cfg = engine_.engineConfig();
         if (on) {
-            cfg.vcm = dsca::createStereoVCM(
-                dsca::Modulation::QPSK, dsca::FECRate::Rate_1_2,
-                dsca::Modulation::QAM64, dsca::FECRate::Rate_3_4,
+            cfg.vcm = gw::createStereoVCM(
+                gw::Modulation::QPSK, gw::FECRate::Rate_1_2,
+                gw::Modulation::QAM64, gw::FECRate::Rate_3_4,
                 2, 2);
         } else {
             cfg.vcm.enabled = false;
@@ -778,6 +1094,7 @@ void MainWindow::buildMenuBar() {
         h->showTab(0);
         h->show();
     });
+    help_menu->addAction("Welcome Tour…", [this]() { showWelcomeTour(); });
     help_menu->addAction("RF / DSP Concepts", [this]() {
         auto* h = new HelpDialog(this);
         h->setAttribute(Qt::WA_DeleteOnClose);
@@ -797,7 +1114,7 @@ void MainWindow::buildMenuBar() {
         h->show();
     });
     help_menu->addSeparator();
-    help_menu->addAction("About DSCA-NG", this, &MainWindow::showAboutDialog);
+    help_menu->addAction("About Groundwave", this, &MainWindow::showAboutDialog);
 }
 
 // =========================================================================
@@ -890,9 +1207,10 @@ void MainWindow::buildStatusBar() {
 void MainWindow::closeEvent(QCloseEvent* e) {
     engine_.shutdown();
     bridge_.stop();
-    QSettings settings("DSCA-NG", "MainWindow");
+    QSettings settings("Groundwave", "MainWindow");
     settings.setValue("geometry",    saveGeometry());
     settings.setValue("windowState", saveState());
+    saveUiPrefs();
     QMainWindow::closeEvent(e);
 }
 
@@ -940,7 +1258,7 @@ void MainWindow::buildKeyboardShortcuts() {
             info_panel_->refresh();
             engine_.onConfigChanged();
             statusBar()->showMessage(
-                QString("Preset %1: %2").arg(i).arg(preset_name), 2000);
+                QString("Preset %1: %2").arg(i + 1).arg(preset_name), 2000);
             if (active_slot >= 0) status_preset_->setText(preset_name);
         });
     }
@@ -975,7 +1293,7 @@ void MainWindow::buildKeyboardShortcuts() {
 
 void MainWindow::saveConfigInteractive() {
     QString path = QFileDialog::getSaveFileName(
-        this, "Save Configuration", "dsca_config.json",
+        this, "Save Configuration", "groundwave_config.json",
         "JSON Files (*.json)");
     if (path.isEmpty()) return;
     bool ok;
@@ -984,7 +1302,7 @@ void MainWindow::saveConfigInteractive() {
         // spectrum into AppState every tick, so an unsynchronized read can
         // serialize torn values (UB).
         std::lock_guard<std::mutex> lock(state_.mtx);
-        ok = dsca::saveConfigToFile(state_, path.toStdString());
+        ok = gw::saveConfigToFile(state_, path.toStdString());
     }
     statusBar()->showMessage(ok ? "Config saved: " + path : "Save failed!", 3000);
 }
@@ -1001,7 +1319,7 @@ void MainWindow::loadConfigInteractive() {
         // re-lock, so holding state_.mtx here is safe (no recursion),
         // and the values are range-validated inside the deserializer.
         std::lock_guard<std::mutex> lock(state_.mtx);
-        ok = dsca::loadConfigFromFile(path.toStdString(), state_);
+        ok = gw::loadConfigFromFile(path.toStdString(), state_);
         if (ok) {
             // Clear stale live visualization/measurements so the display
             // doesn't show the previous config's constellation/levels/sync
@@ -1039,15 +1357,13 @@ void MainWindow::exportSpectrumPNG() {
         "PNG Images (*.png);;All Files (*)");
     if (path.isEmpty()) return;
 
-    // Render the spectrum widget to a high-DPI pixmap
-    qreal dpr = devicePixelRatioF();
-    QPixmap pixmap(static_cast<int>(spectrum_widget_->width() * dpr),
-                   static_cast<int>(spectrum_widget_->height() * dpr));
-    pixmap.setDevicePixelRatio(dpr);
-    pixmap.fill(Qt::black);
-    spectrum_widget_->render(&pixmap);
+    // The spectrum is a QOpenGLWidget: QWidget::render() can't see the GL
+    // framebuffer (the waterfall would export black). grabFramebuffer()
+    // returns the composed FBO — GL quad and QPainter overlays together —
+    // already at device-pixel resolution.
+    QImage img = spectrum_widget_->grabFramebuffer();
 
-    if (pixmap.save(path, "PNG")) {
+    if (!img.isNull() && img.save(path, "PNG")) {
         statusBar()->showMessage("Exported: " + path, 3000);
     } else {
         statusBar()->showMessage("Export failed!", 3000);
@@ -1059,11 +1375,21 @@ void MainWindow::exportSpectrumPNG() {
 // =========================================================================
 
 void MainWindow::openHierarchicalDialog() {
+    // Non-modal tool palette (see showDeviceDialog): configure layers
+    // while watching the constellation/hier-flow react.
+    if (hier_dlg_) {
+        hier_dlg_->raise();
+        hier_dlg_->activateWindow();
+        return;
+    }
     // Seed the dialog from the engine's current hier config (the engine
     // is authoritative for what's actually running).
-    dsca::HierarchicalDialog dlg(engine_.engineConfig(), this);
-    if (dlg.exec() == QDialog::Accepted) {
-        auto cfg = dlg.engineConfig();
+    auto* dlg = new gw::HierarchicalDialog(engine_.engineConfig(), this);
+    hier_dlg_ = dlg;
+    dlg->setWindowFlag(Qt::Tool);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dlg, &QDialog::accepted, this, [this, dlg]() {
+        auto cfg = dlg->engineConfig();
         // Push to engine (triggers initDSP rebuild on next sync).
         engine_.setEngineConfig(cfg);
         // Mirror into AppState so panels (TX, LinkBudget) see the new
@@ -1082,16 +1408,22 @@ void MainWindow::openHierarchicalDialog() {
         } else {
             summary = QString("Hierarchical: %1 (α=%2)")
                           .arg(QString::fromUtf8(
-                                   dsca::hierarchicalModeName(cfg.hier.mode)))
+                                   gw::hierarchicalModeName(cfg.hier.mode)))
                           .arg(cfg.hier.alpha, 0, 'f', 2);
         }
         statusBar()->showMessage(summary, 4000);
-    }
+    });
+    // On Cancel the TX panel's checkable Hier button must resync with the
+    // unchanged state (it toggles optimistically on click).
+    connect(dlg, &QDialog::rejected, this, [this]() {
+        if (tx_panel_) tx_panel_->refreshFromState();
+    });
+    dlg->show();
 }
 
 void MainWindow::showAboutDialog() {
     auto* dlg = new QDialog(this);
-    dlg->setWindowTitle("About DSCA-NG");
+    dlg->setWindowTitle("About Groundwave");
     dlg->setMinimumSize(480, 420);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
 
@@ -1100,15 +1432,15 @@ void MainWindow::showAboutDialog() {
     l->setSpacing(8);
 
     // Title
-    auto* title = new QLabel(QString("DSCA-NG  v%1.%2.%3")
-        .arg(DSCA_VERSION_MAJOR).arg(DSCA_VERSION_MINOR).arg(DSCA_VERSION_PATCH));
+    auto* title = new QLabel(QString("Groundwave  v%1.%2.%3")
+        .arg(GW_VERSION_MAJOR).arg(GW_VERSION_MINOR).arg(GW_VERSION_PATCH));
     title->setStyleSheet(
         "font-size: 22px; font-weight: 200; color: #F2F2F7; "
         "letter-spacing: 1px;");
     l->addWidget(title);
 
     // Subtitle
-    auto* sub = new QLabel("Digital SCA Next Generation\nOFDM Digital Radio Modem");
+    auto* sub = new QLabel("Digital voice, down to earth\nOpen OFDM digital radio modem");
     sub->setStyleSheet("color: #AEAEB2; font-size: 13px; line-height: 1.4;");
     l->addWidget(sub);
 
@@ -1125,7 +1457,7 @@ void MainWindow::showAboutDialog() {
         "  Hierarchical modulation  ·  VCM superframe\n"
         "  PLS auto-detect  ·  Opus audio codec\n"
         "  SNR/link budget  ·  FM SCA channel model")
-        .arg(DSCA_BUILD_DATE)
+        .arg(GW_BUILD_DATE)
         .arg(QT_VERSION_STR));
     info->setStyleSheet(
         "color: #8E8E93; font-size: 11px; "
@@ -1162,22 +1494,42 @@ void MainWindow::showAboutDialog() {
 // =========================================================================
 
 void MainWindow::showDeviceDialog() {
-    DeviceDialog dlg(this);
+    // Non-modal tool palette: keep the meters/spectrum visible while
+    // choosing devices. Single instance while open; recreated per open so
+    // the device list and seeded state are always current.
+    if (device_dlg_) {
+        device_dlg_->raise();
+        device_dlg_->activateWindow();
+        return;
+    }
+    auto* dlg = new DeviceDialog(this);
+    device_dlg_ = dlg;
+    dlg->setWindowFlag(Qt::Tool);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
     // Seed the dialog with the engine's current audio config so it opens
     // reflecting reality and "Apply" with no change doesn't disable HW. (#29)
     {
         auto cfg = engine_.engineConfig();
-        dlg.setCurrentConfig(cfg.playback_device, cfg.capture_device,
-                             cfg.use_hw_audio);
+        dlg->setCurrentConfig(cfg.playback_device, cfg.capture_device,
+                              cfg.use_hw_audio);
     }
-    connect(&dlg, &DeviceDialog::deviceConfigChanged,
-            [this](int pb, int cap, bool hw_on) {
+    connect(dlg, &DeviceDialog::deviceConfigChanged,
+            [this, dlg](int pb, int cap, bool hw_on) {
         auto cfg = engine_.engineConfig();
         cfg.use_hw_audio      = hw_on;
         cfg.playback_device   = pb;
         cfg.capture_device    = cap;
         engine_.setEngineConfig(cfg);
         engine_.onConfigChanged();
+
+        // Persist by NAME — enumeration indices are not stable across
+        // reboots/hot-plug; restoreUiPrefs() re-resolves at startup.
+        {
+            QSettings s("Groundwave", "MainWindow");
+            s.setValue("audio/hw_on", hw_on);
+            s.setValue("audio/pb_name", dlg->playbackDeviceName(pb));
+            s.setValue("audio/cap_name", dlg->captureDeviceName(cap));
+        }
 
         // Refresh the TX panel's sample-rate combo with the rates this
         // specific device pair actually supports. If HW audio is disabled
@@ -1192,7 +1544,98 @@ void MainWindow::showDeviceDialog() {
             hw_on ? QString("Hardware audio: PB=%1  CAP=%2").arg(pb).arg(cap)
                   : "Hardware audio: disabled (loopback)", 3000);
     });
-    dlg.exec();
+    dlg->show();
 }
 
-} // namespace dsca
+// =========================================================================
+// Operate / Engineer modes + first-run welcome
+// =========================================================================
+
+void MainWindow::setOperateMode(bool on) {
+    operate_mode_ = on;
+    // Engineering docks by objectName (makeDock sets it to the title).
+    // The operating surface — central spectrum/constellation, Controls
+    // (TX + alarms), Status (RX + info) — stays.
+    static const char* kEngineeringDocks[] = {
+        "Streams + Scope", "Diagnostics", "Tuning",
+    };
+    for (const char* name : kEngineeringDocks) {
+        if (auto* d = findChild<QDockWidget*>(QString::fromUtf8(name))) {
+            d->setVisible(!on);
+        }
+    }
+    statusBar()->showMessage(
+        on ? "Operate mode — engineering panels hidden (View menu or "
+             "toolbar restores the full cockpit)"
+           : "Engineer mode — full cockpit", 3000);
+}
+
+void MainWindow::showWelcomeTour() {
+    auto* dlg = new QDialog(this);
+    dlg->setWindowTitle("Welcome to Groundwave");
+    dlg->setWindowFlag(Qt::Tool);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setMinimumWidth(520);
+
+    auto* l = new QVBoxLayout(dlg);
+    l->setContentsMargins(24, 24, 24, 18);
+    l->setSpacing(10);
+
+    auto* head = new QHBoxLayout;
+    auto* icon = new QLabel;
+    icon->setPixmap(QPixmap(":/icon/groundwave_32.png"));
+    head->addWidget(icon);
+    auto* title = new QLabel("Groundwave — digital voice, down to earth");
+    title->setStyleSheet("font-size: 16px; color: #F2F2F7;");
+    head->addWidget(title, 1);
+    l->addLayout(head);
+
+    auto* body = new QLabel(
+        "<style>li { margin-bottom: 7px; }</style>"
+        "<ul>"
+        "<li><b>Transmit:</b> press <b>TX</b> on the Controls panel (or "
+        "<b>F5</b>). The built-in loopback runs the full TX→RX chain — no "
+        "hardware needed. Presets load with <b>Ctrl+1…8</b>.</li>"
+        "<li><b>Tune by hand:</b> drag the blue band lines on the spectrum "
+        "— the center line moves Fc, the edges set the bandwidth.</li>"
+        "<li><b>Look around:</b> right-drag zooms the frequency axis, "
+        "Ctrl+wheel zooms at the pointer, double-click resets.</li>"
+        "<li><b>Simplify:</b> <b>Operate mode</b> (toolbar) hides the "
+        "engineering panels until you want them back.</li>"
+        "<li><b>Learn:</b> <b>F1</b> opens the operator guide and the "
+        "RF/DSP concepts primer.</li>"
+        "</ul>");
+    body->setWordWrap(true);
+    body->setStyleSheet("color: #C7C7CC; font-size: 12px;");
+    l->addWidget(body);
+
+    auto* row = new QHBoxLayout;
+    auto* guide_btn = new QPushButton("Open the guide");
+    auto* operate_btn = new QPushButton("Start in Operate mode");
+    auto* go_btn = new QPushButton("Get started");
+    go_btn->setObjectName("accentBtn");
+    go_btn->setDefault(true);
+    row->addWidget(guide_btn);
+    row->addWidget(operate_btn);
+    row->addStretch();
+    row->addWidget(go_btn);
+    l->addLayout(row);
+
+    connect(guide_btn, &QPushButton::clicked, this, [this]() {
+        auto* h = new HelpDialog(this);
+        h->setAttribute(Qt::WA_DeleteOnClose);
+        h->showTab(0);
+        h->show();
+    });
+    connect(operate_btn, &QPushButton::clicked, dlg, [this, dlg]() {
+        if (auto* op = menuBar()->findChild<QAction*>("act_operate")) {
+            op->setChecked(true);
+        }
+        dlg->close();
+    });
+    connect(go_btn, &QPushButton::clicked, dlg, &QDialog::close);
+
+    dlg->show();
+}
+
+} // namespace gw

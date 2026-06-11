@@ -36,7 +36,7 @@
 #include <memory>
 #include <mutex>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Ring Buffer (lock-free SPSC for audio thread communication)
@@ -228,4 +228,4 @@ private:
     ComplexBuf complex_loopback_buf_;
 };
 
-} // namespace dsca
+} // namespace gw

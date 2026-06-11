@@ -12,7 +12,7 @@
 #include <QSizePolicy>
 #include <QFrame>
 
-namespace dsca {
+namespace gw {
 
 namespace {
 // Format a sample rate as "48 kHz" / "44.1 kHz". Integer r/1000 mislabeled
@@ -934,4 +934,4 @@ void TxPanel::onChannelPresetSelected(int idx) {
     emit configChanged();
 }
 
-} // namespace dsca
+} // namespace gw

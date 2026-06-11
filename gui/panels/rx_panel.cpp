@@ -9,7 +9,7 @@
 #include <QStyle>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 static const char* syncStateName(SyncState s) {
     switch (s) {
@@ -93,7 +93,13 @@ void RxPanel::buildUi() {
     addMetric("SNR",  &snr_value_,  true);
     addMetric("EVM",  &evm_value_,  false);
     addMetric("MER",  &mer_value_,  false);
-    addMetric("Δf",   &freq_offset_value_, false);
+    // Same name and same quantity as the Tuning panel's CFO readout —
+    // these two used to show DIFFERENT values ("Δf" = fractional-only
+    // here, "CFO" = integer+fractional there) under different names.
+    addMetric("CFO",  &freq_offset_value_, false);
+    freq_offset_value_->setToolTip(
+        "Total carrier frequency offset (integer + fractional) as "
+        "corrected by the receiver. Matches the Tuning panel's CFO.");
 
     // ---- Frame Counters ----
     addSep();
@@ -102,7 +108,13 @@ void RxPanel::buildUi() {
     addMetric("RX",   &frames_rx_);
     addMetric("OK",   &frames_ok_);
     addMetric("ERR",  &frames_err_);
-    addMetric("BER",  &ber_value_);
+    // This is the post-FEC FRAME error rate (frames_bad / frames_rx),
+    // not a bit error rate — labeling it "BER" misled by orders of
+    // magnitude.
+    addMetric("FER",  &ber_value_);
+    ber_value_->setToolTip(
+        "Post-FEC frame error rate: bad frames / received frames, "
+        "cumulative since start. Not a bit error rate.");
 
     // ---- AGC ----
     addSep();
@@ -120,7 +132,7 @@ void RxPanel::applyStatusColor(QLabel* lbl, float value, float good, float warn_
     lbl->style()->polish(lbl);
 }
 
-void RxPanel::onStatsUpdated(dsca::ModemStats stats) {
+void RxPanel::onStatsUpdated(gw::ModemStats stats) {
     // Sync
     bool locked = (stats.sync_state == SyncState::Locked ||
                    stats.sync_state == SyncState::Tracking);
@@ -154,8 +166,10 @@ void RxPanel::onStatsUpdated(dsca::ModemStats stats) {
     mer_value_->style()->unpolish(mer_value_);
     mer_value_->style()->polish(mer_value_);
 
-    // Frequency offset
-    freq_offset_value_->setText(QString("%1 Hz").arg(stats.freq_offset, 0, 'f', 1));
+    // Carrier frequency offset — total (integer + fractional), matching
+    // the Tuning panel's CFO readout.
+    freq_offset_value_->setText(
+        QString("%1 Hz").arg(stats.cfo_total_hz, 0, 'f', 1));
 
     // Counters
     frames_tx_->setText(QString::number(static_cast<long long>(stats.frames_tx)));
@@ -167,7 +181,7 @@ void RxPanel::onStatsUpdated(dsca::ModemStats stats) {
     frames_err_->style()->unpolish(frames_err_);
     frames_err_->style()->polish(frames_err_);
 
-    // BER
+    // FER (post-FEC frame error rate)
     if (stats.ber_estimate < 1e-9f)
         ber_value_->setText("< 1e-9");
     else
@@ -178,4 +192,4 @@ void RxPanel::onAgcUpdated(float gain_db) {
     agc_value_->setText(QString("%1 dB").arg(gain_db, 0, 'f', 1));
 }
 
-} // namespace dsca
+} // namespace gw

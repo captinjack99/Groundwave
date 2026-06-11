@@ -6,7 +6,7 @@
 #include "../../include/snr_calculator.hpp"
 #include <QPainter>
 
-namespace dsca {
+namespace gw {
 
 PLSStatusWidget::PLSStatusWidget(QWidget* parent) : QWidget(parent) {
     setMinimumSize(160, 80);
@@ -81,4 +81,4 @@ void PLSStatusWidget::paintEvent(QPaintEvent*) {
         conf >= 2 ? style::C_OK : style::C_WARNING);
 }
 
-} // namespace dsca
+} // namespace gw

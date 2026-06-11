@@ -13,11 +13,11 @@
  *
  * Examples:
  *   List devices:
- *     dsca_modem --list
+ *     gw_modem --list
  *   Software loopback BER test (no hardware):
- *     dsca_modem --mode internal -d 10 -m qpsk
+ *     gw_modem --mode internal -d 10 -m qpsk
  *   Virtual cable end-to-end:
- *     dsca_modem --mode vcable --pb 5 --cap 3 -d 30 -m qam16
+ *     gw_modem --mode vcable --pb 5 --cap 3 -d 30 -m qam16
  */
 #include "types.hpp"
 #include "soundcard_modem.hpp"
@@ -28,7 +28,7 @@
 #include "opus_codec.hpp"
 #include "snr_calculator.hpp"   // modulationName / fecRateName
 
-#ifdef DSCA_ENABLE_AUDIO
+#ifdef GW_ENABLE_AUDIO
 #include "hw_audio.hpp"
 #endif
 
@@ -40,13 +40,13 @@
 #include <thread>
 #include <atomic>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
 void usage() {
     std::fprintf(stderr,
-        "dsca_modem [--mode internal|tx|rx|vcable] [options]\n"
+        "gw_modem [--mode internal|tx|rx|vcable] [options]\n"
         "  --list             List available audio devices and exit\n"
         "  --mode <mode>      internal | tx | rx | vcable  (default: internal)\n"
         "  --pb <id>          Playback device index (HW modes)\n"
@@ -94,7 +94,7 @@ FECRate parseFec(const std::string& s, bool& ok) {
 }
 
 void listDevices() {
-#ifdef DSCA_ENABLE_AUDIO
+#ifdef GW_ENABLE_AUDIO
     HWAudioDevice dev;
     if (!dev.init()) {
         std::fprintf(stderr, "Failed to init audio context\n");
@@ -118,7 +118,7 @@ void listDevices() {
 #else
     std::fprintf(stderr,
         "Hardware audio support not built in.\n"
-        "Re-configure with -DDSCA_ENABLE_AUDIO=ON.\n");
+        "Re-configure with -DGW_ENABLE_AUDIO=ON.\n");
 #endif
 }
 
@@ -266,7 +266,7 @@ int main(int argc, char** argv) {
     OFDMSynchronizer ofdm_sync(ofdm);
 
     // Hardware audio: needed for tx, rx, vcable modes
-#ifdef DSCA_ENABLE_AUDIO
+#ifdef GW_ENABLE_AUDIO
     HWAudioDevice hw;
     bool hw_started = false;
     if (mode == "tx" || mode == "rx" || mode == "vcable") {
@@ -293,14 +293,14 @@ int main(int argc, char** argv) {
 #else
     if (mode != "internal") {
         std::fprintf(stderr,
-            "Mode '%s' requires hardware audio. Re-build with -DDSCA_ENABLE_AUDIO=ON.\n",
+            "Mode '%s' requires hardware audio. Re-build with -DGW_ENABLE_AUDIO=ON.\n",
             mode.c_str());
         return 1;
     }
 #endif
 
     std::fprintf(stderr,
-        "DSCA-NG modem CLI\n"
+        "Groundwave modem CLI\n"
         "  mode      : %s\n"
         "  duration  : %d s\n"
         "  modulation: %s\n"
@@ -460,7 +460,7 @@ int main(int argc, char** argv) {
         }
     }
 
-#ifdef DSCA_ENABLE_AUDIO
+#ifdef GW_ENABLE_AUDIO
     if (hw_started) hw.stop();
 #endif
 

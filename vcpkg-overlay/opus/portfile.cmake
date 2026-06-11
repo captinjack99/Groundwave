@@ -1,7 +1,7 @@
 # Use the official RELEASE tarball, not the GitHub source archive: with
 # OPUS_DRED=ON the CMake build needs the generated neural-model data files
 # (dnn/*_data.h) which are too large for git and so are ABSENT from the
-# GitHub archive — only the release tarball bundles them. (DSCA-NG SOTA-5)
+# GitHub archive — only the release tarball bundles them. (Groundwave SOTA-5)
 vcpkg_download_distfile(ARCHIVE
     URLS
         "https://downloads.xiph.org/releases/opus/opus-${VERSION}.tar.gz"
@@ -18,7 +18,7 @@ vcpkg_extract_source_archive(SOURCE_PATH
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     FEATURES
         avx2 AVX2_SUPPORTED
-        dred OPUS_DRED          # DSCA-NG SOTA-5: enable DRED (auto-enables deep PLC)
+        dred OPUS_DRED          # Groundwave SOTA-5: enable DRED (auto-enables deep PLC)
 )
 
 set(STACK_PROTECTOR ON)

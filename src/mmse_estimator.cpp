@@ -31,7 +31,7 @@
 #include <numeric>
 #include <complex>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Helpers
@@ -370,4 +370,4 @@ void MMSEChannelEstimator::reset() {
     }
 }
 
-} // namespace dsca
+} // namespace gw

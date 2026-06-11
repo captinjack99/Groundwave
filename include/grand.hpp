@@ -19,7 +19,7 @@
 #include <vector>
 #include <memory>
 
-namespace dsca {
+namespace gw {
 
 struct GRANDConfig {
     size_t max_weight  = 3;       ///< Max Hamming weight of error pattern
@@ -120,4 +120,4 @@ private:
     std::vector<uint8_t> syndrome_;
 };
 
-} // namespace dsca
+} // namespace gw

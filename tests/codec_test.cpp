@@ -25,7 +25,7 @@
 #include <algorithm>
 #include <numeric>
 
-using namespace dsca;
+using namespace gw;
 
 static int tests_passed = 0;
 static int tests_failed = 0;
@@ -119,7 +119,7 @@ void addAWGN(ComplexBuf& samples, float snr_db, std::mt19937& rng) {
 } // anonymous
 
 int main() {
-    printf("=== DSCA-NG v2 Codec Test Suite ===\n\n");
+    printf("=== Groundwave v2 Codec Test Suite ===\n\n");
 
     // =====================================================================
     // Test 1: Opus mono encode/decode round-trip (delay-compensated)

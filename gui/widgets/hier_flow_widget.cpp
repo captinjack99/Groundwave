@@ -12,7 +12,7 @@
 #include <QPainterPath>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 HierFlowWidget::HierFlowWidget(QWidget* parent) : QWidget(parent) {
     setMinimumSize(420, 220);
@@ -275,4 +275,4 @@ void HierFlowWidget::drawConstellationInset(QPainter& p, int x, int y,
                Qt::AlignLeft, "● LP point (Side)");
 }
 
-} // namespace dsca
+} // namespace gw

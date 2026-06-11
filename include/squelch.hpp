@@ -15,7 +15,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace dsca {
+namespace gw {
 
 struct SquelchConfig {
     float open_threshold_db   = -50.0f;  ///< dBFS to open the gate
@@ -113,4 +113,4 @@ private:
     uint32_t below_count_ = 0;
 };
 
-} // namespace dsca
+} // namespace gw

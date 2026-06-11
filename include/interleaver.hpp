@@ -12,7 +12,7 @@
 #include "types.hpp"
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 class BitInterleaver {
 public:
@@ -46,4 +46,4 @@ private:
     std::vector<size_t> inv_perm_; // inverse permutation
 };
 
-} // namespace dsca
+} // namespace gw

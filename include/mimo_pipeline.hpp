@@ -25,7 +25,7 @@
 #include <memory>
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 class MIMOMod {
 public:
@@ -182,4 +182,4 @@ private:
     SymbolMapper                        mapper_;
 };
 
-} // namespace dsca
+} // namespace gw

@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace dsca {
+namespace gw {
 
 namespace {
 constexpr uint16_t PRIM_POLY = 0x11D;   // standard GF(256) primitive
@@ -248,4 +248,4 @@ std::vector<uint8_t> ReedSolomon::encodeCopy(const uint8_t* data,
     return block;
 }
 
-} // namespace dsca
+} // namespace gw

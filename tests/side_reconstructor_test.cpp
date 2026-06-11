@@ -18,7 +18,7 @@
 #include <random>
 #include <vector>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 
@@ -127,7 +127,7 @@ void test_reset_clears_state() {
 } // anonymous
 
 int main() {
-    std::printf("=== DSCA-NG Side-Reconstructor Test Suite ===\n");
+    std::printf("=== Groundwave Side-Reconstructor Test Suite ===\n");
     test_output_length();
     test_decorrelation();
     test_magnitude_preserved();

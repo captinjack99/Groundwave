@@ -22,7 +22,7 @@
 #include "types.hpp"
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // FrameBuilder (TX side)
@@ -98,4 +98,4 @@ public:
     }
 };
 
-} // namespace dsca
+} // namespace gw

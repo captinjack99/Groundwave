@@ -15,7 +15,7 @@
 #include <QString>
 #include <mutex>
 
-namespace dsca {
+namespace gw {
 
 class PLSStatusWidget : public QWidget {
     Q_OBJECT
@@ -42,4 +42,4 @@ private:
     mutable std::mutex mtx_;
 };
 
-} // namespace dsca
+} // namespace gw

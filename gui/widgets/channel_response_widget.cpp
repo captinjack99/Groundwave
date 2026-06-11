@@ -7,7 +7,7 @@
 #include <cmath>
 #include <vector>
 
-namespace dsca {
+namespace gw {
 
 ChannelResponseWidget::ChannelResponseWidget(AppState& state, QWidget* parent)
     : QWidget(parent), state_(state)
@@ -83,6 +83,14 @@ void ChannelResponseWidget::paintEvent(QPaintEvent*) {
         p.setPen(QPen(style::C_SIGNAL, 0));
         if (pts.size() >= 2)
             p.drawPolyline(pts.data(), static_cast<int>(pts.size()));
+    } else {
+        // Empty state: no estimate until the receiver acquires a preamble.
+        p.setPen(QColor(142, 142, 147));
+        QFont f;
+        f.setPixelSize(11);
+        p.setFont(f);
+        p.drawText(r, Qt::AlignCenter,
+                   "Channel response — waiting for acquisition");
     }
 
     // Title
@@ -95,4 +103,4 @@ void ChannelResponseWidget::paintEvent(QPaintEvent*) {
                "|H(f)|  channel response  (subcarrier index →)");
 }
 
-} // namespace dsca
+} // namespace gw

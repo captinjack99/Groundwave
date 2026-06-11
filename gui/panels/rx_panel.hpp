@@ -7,7 +7,7 @@
 #include <QWidget>
 #include <QLabel>
 
-namespace dsca {
+namespace gw {
 
 class RxPanel : public QWidget {
     Q_OBJECT
@@ -15,7 +15,7 @@ public:
     explicit RxPanel(AppState& state, QWidget* parent = nullptr);
 
 public slots:
-    void onStatsUpdated(dsca::ModemStats stats);
+    void onStatsUpdated(gw::ModemStats stats);
     void onAgcUpdated(float gain_db);
 
 private:
@@ -48,4 +48,4 @@ private:
     QLabel* agc_value_;
 };
 
-} // namespace dsca
+} // namespace gw

@@ -9,7 +9,7 @@
 #include <QFrame>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 AlarmConfigDialog::AlarmConfigDialog(AppState& state, QWidget* parent)
     : QDialog(parent), state_(state)
@@ -173,4 +173,4 @@ void AlarmConfigDialog::onReset() {
     loadFromState();
 }
 
-} // namespace dsca
+} // namespace gw

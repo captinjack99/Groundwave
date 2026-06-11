@@ -1,6 +1,6 @@
 /**
  * @file style.hpp
- * @brief DSCA-NG design system — dark broadcast instrument aesthetic
+ * @brief Groundwave design system — dark broadcast instrument aesthetic
  *
  * Color palette inspired by Apple's dark mode HIG applied to
  * broadcast test & measurement equipment (Tektronix / R&S palette).
@@ -13,7 +13,7 @@
 #include <QColor>
 #include <QString>
 
-namespace dsca::style {
+namespace gw::style {
 
 // =========================================================================
 // Color Tokens
@@ -668,4 +668,4 @@ namespace dim {
     constexpr int SEPARATOR_H     =  1;
 }
 
-} // namespace dsca::style
+} // namespace gw::style

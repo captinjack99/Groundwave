@@ -384,11 +384,11 @@ int main(int argc, char* argv[]) {
     logLine("INFO", "gui_walker start mode=" + mode);
 
     WalkerApp app(argc, argv);
-    app.setApplicationName("DSCA-NG");
-    app.setOrganizationName("DSCA-NG");
+    app.setApplicationName("Groundwave");
+    app.setOrganizationName("Groundwave");
 
-    dsca::AppState state;
-    dsca::MainWindow window(state);
+    gw::AppState state;
+    gw::MainWindow window(state);
     window.resize(1400, 900);
     window.show();
 

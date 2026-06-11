@@ -1,4 +1,4 @@
-# DSCA-NG v2 — Windows Build Guide
+# Groundwave v2 — Windows Build Guide
 ## Visual Studio 2022 + vcpkg + Qt6
 
 ---
@@ -71,7 +71,7 @@ Open **Developer PowerShell for VS 2022** (from Start menu or VS).
 
 ```powershell
 # Navigate to where you extracted the zip
-cd C:\Users\YourName\Projects\dsca-ng-v2
+cd C:\Users\YourName\Projects\groundwave
 ```
 
 ### Configure
@@ -128,15 +128,15 @@ when run directly, e.g.:
 ### Run the GUI
 
 ```powershell
-.\Release\dsca_ng.exe
+.\Release\groundwave.exe
 ```
 
 If Qt DLLs aren't found, run `windeployqt`:
 ```powershell
 # Find windeployqt (vcpkg or Qt installer)
-C:\vcpkg\installed\x64-windows\tools\Qt6\bin\windeployqt.exe .\Release\dsca_ng.exe
+C:\vcpkg\installed\x64-windows\tools\Qt6\bin\windeployqt.exe .\Release\groundwave.exe
 # OR from Qt installer:
-C:\Qt\6.7.0\msvc2022_64\bin\windeployqt.exe .\Release\dsca_ng.exe
+C:\Qt\6.7.0\msvc2022_64\bin\windeployqt.exe .\Release\groundwave.exe
 ```
 
 ---
@@ -148,7 +148,7 @@ C:\Qt\6.7.0\msvc2022_64\bin\windeployqt.exe .\Release\dsca_ng.exe
 | `BUILD_GUI` | `ON` | Build the Qt6 GUI executable |
 | `BUILD_CLI` | `ON` | Build the command-line tools |
 | `BUILD_TESTS` | `ON` | Build test executables |
-| `DSCA_ENABLE_AUDIO` | `ON` | Enable real soundcard I/O via miniaudio |
+| `GW_ENABLE_AUDIO` | `ON` | Enable real soundcard I/O via miniaudio |
 | `ENABLE_SIMD` | `ON` | Compile with AVX2 (binaries require an AVX2-capable CPU, ~2013+) |
 | `USE_FFTW3` | `OFF` | Use FFTW3 single-precision instead of the built-in FFT |
 
@@ -156,7 +156,7 @@ Example with hardware audio enabled:
 ```powershell
 cmake -B build -G "Visual Studio 17 2022" -A x64 `
     -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" `
-    -DDSCA_ENABLE_AUDIO=ON
+    -DGW_ENABLE_AUDIO=ON
 ```
 
 ---
@@ -180,7 +180,7 @@ cmake -B build -G "Visual Studio 17 2022" -A x64 `
 - `.\vcpkg install qt6[tools]:x64-windows`
 
 ### Missing DLLs at runtime
-- Copy DLLs: `windeployqt .\Release\dsca_ng.exe`
+- Copy DLLs: `windeployqt .\Release\groundwave.exe`
 - Or add vcpkg bin to PATH: `$env:Path += ";C:\vcpkg\installed\x64-windows\bin"`
 
 ### Tests-only build (no GUI, no Qt needed)
@@ -192,7 +192,7 @@ cmake --build build --config Release --parallel
 cd build
 .\Release\gui_test.exe
 ```
-Note: This still needs Qt6 for the `dsca_gui` library. For a pure
+Note: This still needs Qt6 for the `gw_gui` library. For a pure
 headless/test build without Qt, run only the core test executables:
 ```powershell
 .\Release\loopback_test.exe
@@ -215,13 +215,13 @@ cd vcpkg
 .\bootstrap-vcpkg.bat
 .\vcpkg install opus:x64-windows qt6:x64-windows
 
-# Build DSCA-NG
-cd C:\Users\YourName\Projects\dsca-ng-v2
+# Build Groundwave
+cd C:\Users\YourName\Projects\groundwave
 cmake -B build -G "Visual Studio 17 2022" -A x64 `
     -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake"
 cmake --build build --config Release --parallel
 cd build
 ctest -C Release --output-on-failure
 .\Release\gui_test.exe
-.\Release\dsca_ng.exe
+.\Release\groundwave.exe
 ```

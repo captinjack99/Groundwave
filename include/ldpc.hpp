@@ -1,6 +1,6 @@
 /**
  * @file ldpc.hpp
- * @brief LDPC Forward Error Correction for DSCA-NG v2
+ * @brief LDPC Forward Error Correction for Groundwave v2
  *
  * Quasi-Cyclic LDPC with IRA (Irregular Repeat-Accumulate) structure:
  *   H = [ H_info | H_parity ]
@@ -20,7 +20,7 @@
 #include <vector>
 #include <memory>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Block Size
@@ -169,4 +169,4 @@ private:
     std::vector<uint8_t>       hard_bits_;      // n packed bytes
 };
 
-} // namespace dsca
+} // namespace gw

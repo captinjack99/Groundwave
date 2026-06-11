@@ -9,7 +9,7 @@
 #include <QWidget>
 #include <memory>
 
-namespace dsca {
+namespace gw {
 
 class ConstellationWidget : public QWidget {
     Q_OBJECT
@@ -68,4 +68,4 @@ private:
     Modulation                    mapper_mod_ = Modulation::QPSK;
 };
 
-} // namespace dsca
+} // namespace gw

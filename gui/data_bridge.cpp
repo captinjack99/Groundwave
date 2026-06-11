@@ -4,7 +4,7 @@
 #include "data_bridge.hpp"
 #include <QMutexLocker>
 
-namespace dsca {
+namespace gw {
 
 DataBridge::DataBridge(AppState& state, QObject* parent)
     : QObject(parent)
@@ -167,4 +167,4 @@ void DataBridge::onTimer() {
     }
 }
 
-} // namespace dsca
+} // namespace gw

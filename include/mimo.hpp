@@ -21,7 +21,7 @@
 #include <complex>
 #include <cmath>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Alamouti 2×1 / 2×2 Space-Time Block Coding
@@ -162,4 +162,4 @@ inline std::array<ComplexSample, 2> mmseDetect2x2(
     return x;
 }
 
-} // namespace dsca
+} // namespace gw

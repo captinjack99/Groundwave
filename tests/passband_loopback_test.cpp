@@ -13,7 +13,7 @@
  *      bins directly, which inverted the layout (guard hole at DC, carriers
  *      out to ±Nyquist): bin-exact in complex loopback, destroyed by the
  *      up/downconverter LPFs on every passband path — 0% decode in
- *      `dsca_modem --mode internal`, vcable, and HW mode.
+ *      `gw_modem --mode internal`, vcable, and HW mode.
  *
  *   2. PASSBAND ROUND-TRIP — preamble + LDPC codewords pushed through the
  *      full real-IF chain (upconvert + TX LPF -> ring -> AGC -> LPF
@@ -39,7 +39,7 @@
 #include <vector>
 #include <algorithm>
 
-using namespace dsca;
+using namespace gw;
 
 namespace {
 

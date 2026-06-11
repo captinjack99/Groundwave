@@ -30,7 +30,7 @@
 #include <utility>
 #include <climits>
 
-namespace dsca {
+namespace gw {
 
 // =========================================================================
 // Bit manipulation helpers
@@ -727,4 +727,4 @@ LDPCDecodeResult LDPCDecoder::decodePosterior(const float* llr_in,
     return result;
 }
 
-} // namespace dsca
+} // namespace gw
