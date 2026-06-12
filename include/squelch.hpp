@@ -14,6 +14,7 @@
 #include "types.hpp"
 #include <cmath>
 #include <cstdint>
+#include <algorithm>
 
 namespace gw {
 

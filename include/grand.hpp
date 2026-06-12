@@ -17,6 +17,7 @@
 #include "ldpc.hpp"
 #include "orbgrand.hpp"  // for LDPCDecodeResult & matrix builder
 #include <vector>
+#include <cstring>
 #include <memory>
 
 namespace gw {

@@ -20,6 +20,7 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <mutex>
 #include <chrono>
 #include <cstring>

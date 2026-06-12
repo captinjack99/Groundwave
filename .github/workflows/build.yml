@@ -8,8 +8,14 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    # A job that can't be scheduled (retired runner label) or hangs used to
+    # pin the run open until GitHub's 24-hour kill — cap it hard.
+    timeout-minutes: 45
     strategy:
+      # Release and Debug are independent signals; don't cancel one
+      # because the other failed.
+      fail-fast: false
       matrix:
         build_type: [Release, Debug]
     steps:
@@ -35,7 +41,8 @@ jobs:
         run: ctest --output-on-failure
 
   build-windows:
-    runs-on: windows-2022
+    runs-on: windows-latest
+    timeout-minutes: 45
     strategy:
       matrix:
         build_type: [Release]
@@ -43,13 +50,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install vcpkg deps
-        run: |
-          vcpkg install opus:x64-windows
-          # Qt6 typically pre-installed on GH runners; fall back to aqtinstall if not
+        run: vcpkg install opus:x64-windows
         shell: pwsh
 
       - name: Setup Qt6
-        uses: jurplel/install-qt-action@v3
+        uses: jurplel/install-qt-action@v4
         with:
           version: '6.7.0'
           host: 'windows'
@@ -70,7 +75,11 @@ jobs:
         run: ctest -C ${{ matrix.build_type }} --output-on-failure
 
   build-macos:
-    runs-on: macos-13
+    # macos-13 was retired by GitHub: jobs requesting it were never
+    # scheduled, which held every run open for the full 24-hour limit
+    # (the failure signature on every pre-rename CI run).
+    runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 

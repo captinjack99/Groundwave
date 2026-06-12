@@ -19,6 +19,7 @@
 #include "types.hpp"
 #include "fft_engine.hpp"
 #include <vector>
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 

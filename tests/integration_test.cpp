@@ -323,14 +323,25 @@ void test_tick_latency_budget() {
         { Modulation::QAM64,  FECRate::Rate_3_4, 1024,  96000, 80.0 },
         { Modulation::QAM256, FECRate::Rate_9_10,2048, 192000, 200.0 },
     };
+    // The budgets are calibrated for optimized local builds. Unoptimized
+    // (Debug) code is legitimately 3-6x slower, and shared CI runners add
+    // load jitter on top — this is the suite's only wall-clock assertion,
+    // so scale it rather than let the whole pipeline flake on it. The
+    // bit-exactness check stays strict in every configuration.
+#ifdef NDEBUG
+    constexpr double kBudgetScale = 1.0;
+#else
+    constexpr double kBudgetScale = 6.0;
+#endif
     for (auto& c : configs) {
         auto r = runCycle(c.m, c.f, c.fft, c.sr, -1.f);
+        const double budget = c.bud_ms * kBudgetScale;
         char label[128];
         std::snprintf(label, sizeof(label),
                       "%-7s / %-5s FFT=%u SR=%u: TX+RX=%.1fms (budget %.0fms)",
                       modulationName(c.m), fecRateName(c.f), c.fft, c.sr,
-                      r.tx_ms + r.rx_ms, c.bud_ms);
-        CHECK(r.tx_ms + r.rx_ms < c.bud_ms && r.bit_errors == 0, label);
+                      r.tx_ms + r.rx_ms, budget);
+        CHECK(r.tx_ms + r.rx_ms < budget && r.bit_errors == 0, label);
     }
 }
 

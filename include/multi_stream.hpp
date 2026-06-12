@@ -25,6 +25,7 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <cstring>
 #include <algorithm>
 
 namespace gw {

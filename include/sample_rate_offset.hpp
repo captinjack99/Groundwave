@@ -21,6 +21,7 @@
 
 #include "types.hpp"
 #include <vector>
+#include <algorithm>
 #include <cmath>
 
 namespace gw {

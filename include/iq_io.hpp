@@ -18,6 +18,7 @@
 #include "types.hpp"
 #include <cstdio>
 #include <cstdint>
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
