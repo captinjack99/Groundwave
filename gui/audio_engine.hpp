@@ -440,7 +440,6 @@ private:
     std::array<float, AGC_WINDOW> agc_history_{};
     size_t                        agc_history_pos_ = 0;
     size_t                        agc_history_filled_ = 0;  ///< valid entries so far
-    float                         agc_history_mean_ = 0.f;
 
     // ---- IQ record / playback ----
     IQRecorder         iq_recorder_;

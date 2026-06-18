@@ -22,7 +22,11 @@ namespace gw {
 
 namespace {
 constexpr uint16_t PRIM_POLY = 0x11D;   // standard GF(256) primitive
-constexpr uint8_t  ALPHA     = 0x02;    // generator element
+// The generator element α = 2: multiplication by α is the `x <<= 1` (with
+// PRIM_POLY reduction) in the table builder, so this named constant is
+// documentation only. [[maybe_unused]] because Clang's
+// -Wunused-const-variable flags it (GCC and MSVC don't).
+[[maybe_unused]] constexpr uint8_t ALPHA = 0x02;
 } // anonymous
 
 ReedSolomon::ReedSolomon() {

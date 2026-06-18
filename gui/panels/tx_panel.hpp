@@ -96,7 +96,6 @@ private:
     // Signal bandwidth (Hz): same dual control, capped at SR/2.
     QSlider*     bw_slider_;
     QSpinBox*    bw_spin_;
-    QLabel*      bw_label_;
 
     // Live-computed band edge readout, e.g. "69.0 – 96.0 kHz"
     QLabel*      band_label_;
