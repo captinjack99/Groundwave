@@ -22,7 +22,10 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     app.setApplicationName("Groundwave");
     app.setOrganizationName("Groundwave");
-    app.setApplicationVersion("2.0.0");
+    // Derived from the CMake project version (GW_VERSION_* compile defs) so
+    // it never drifts from the single source of truth.
+    app.setApplicationVersion(QStringLiteral("%1.%2.%3")
+        .arg(GW_VERSION_MAJOR).arg(GW_VERSION_MINOR).arg(GW_VERSION_PATCH));
 
     // Window/taskbar icon: the carrier-comb mark (assets/icon). The 256
     // covers large contexts, the 32 keeps title bars crisp; the EXE's

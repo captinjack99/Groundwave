@@ -53,7 +53,8 @@ MainWindow::MainWindow(AppState& state, QWidget* parent)
     , bridge_(state, this)
     , engine_(state, bridge_)
 {
-    setWindowTitle("Groundwave  v2.0");
+    setWindowTitle(QStringLiteral("Groundwave  v%1.%2  ·  beta")
+        .arg(GW_VERSION_MAJOR).arg(GW_VERSION_MINOR));
     // Minimum sized to fit a 1366×768 laptop at 100% scale (with room for
     // the taskbar) — heavy panels grow scroll bars below their natural
     // width instead of forcing a giant window. Default opens comfortably

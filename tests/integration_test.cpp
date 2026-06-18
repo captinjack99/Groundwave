@@ -1023,7 +1023,8 @@ void test_selective_channel_llr() {
             on  += runCycle(c.m, c.f, 256, 48000, c.snr, 25, false, sd,
                             false, false, 0.f, &taps, /*per_bin_llr*/ true ).bit_errors;
         }
-        if (off < 0) off = 0; if (on < 0) on = 0;
+        if (off < 0) off = 0;
+        if (on < 0) on = 0;
         std::printf("    %-7s | %-5s | %4.0fdB |   %8ld   |   %8ld\n",
                     modulationName(c.m), fecRateName(c.f), c.snr, off, on);
         char label[160];

@@ -12,6 +12,8 @@
 #include <stdexcept>
 #include <cstring>
 #include <cstdio>
+#include <cmath>     // std::abs(float) — without it std::abs can resolve to
+                     // the integer overload (truncating the frame duration)
 
 namespace gw {
 
@@ -356,7 +358,13 @@ size_t OpusAudioDecoder::decodeFromDRED(const uint8_t* recv_packet, size_t recv_
             // Older than the DRED depth → packet-loss concealment, so the
             // decoder still advances one frame and the gap is concealed
             // rather than left as a hole. (wires decodePLC's underlying call)
-            opus_decode_float(dec_, nullptr, 0, dst, frame, 0);
+            // On a decode error, emit silence rather than leave the frame
+            // holding whatever was in the buffer.
+            int pr = opus_decode_float(dec_, nullptr, 0, dst, frame, 0);
+            if (pr < 0) {
+                std::memset(dst, 0,
+                            static_cast<size_t>(frame) * chans * sizeof(float));
+            }
         }
     }
     return dred_recovered;

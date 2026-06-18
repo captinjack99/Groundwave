@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(Groundwave
-    VERSION 2.0.0
-    DESCRIPTION "Open OFDM digital voice modem"
+    # 0.x = beta: the waveform and DSP are solid and tested, but the app
+    # is young and the API/UX will still shift. Signal that openly.
+    VERSION 0.1.0
+    DESCRIPTION "Open OFDM digital voice modem (beta)"
     LANGUAGES CXX
 )
 

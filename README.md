@@ -12,6 +12,13 @@ ships with a Qt6 desktop application for live operation and diagnostics
 plus a set of command-line tools. It runs entirely in software loopback
 (no hardware required) and can also drive a real soundcard.
 
+> **⚠️ Beta — v0.1.** The DSP core is well tested (the full TX→RX chain
+> decodes bit-exact in software loopback and over AWGN, with a 25-suite
+> test gate) but the application is young. Expect rough edges in the UI
+> and workflow, config formats and CLI flags that may still change, and
+> hardware-radio paths that are still being shaken out on real soundcards.
+> Issue reports and feedback are very welcome.
+
 > Formerly published as DSCA-NG.
 
 ![build](https://github.com/captinjack99/Groundwave/actions/workflows/build.yml/badge.svg)
