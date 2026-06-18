@@ -3,6 +3,7 @@
  */
 #include "tx_panel.hpp"
 
+#include <cmath>      // std::ceil (not transitive under libc++)
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>

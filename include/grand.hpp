@@ -43,7 +43,6 @@ public:
     LDPCDecodeResult decodeHard(const uint8_t* hard_in, uint8_t* hard_out) {
         LDPCDecodeResult result;
         const size_t n = H_->n;
-        const size_t m = H_->m;
         size_t n_bytes = (n + 7) / 8;
         std::memcpy(hard_.data(), hard_in, n_bytes);
 

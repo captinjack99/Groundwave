@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QFrame>
 #include <QSignalBlocker>
+#include <cmath>      // std::log10 / std::ceil (not transitive under libc++)
 
 namespace gw {
 

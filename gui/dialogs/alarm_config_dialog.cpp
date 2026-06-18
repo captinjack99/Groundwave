@@ -8,6 +8,7 @@
 #include <QPushButton>
 #include <QFrame>
 #include <cmath>
+#include <algorithm>  // std::max (not transitive under libc++)
 
 namespace gw {
 

@@ -39,6 +39,8 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include <cmath>      // M_PI, std::sin (not transitive under libc++)
+#include <algorithm>  // std::min
 
 using namespace gw;
 

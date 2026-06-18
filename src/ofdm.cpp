@@ -32,6 +32,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <utility>
+#include <memory>     // std::make_unique (not transitive under libc++)
 
 namespace gw {
 

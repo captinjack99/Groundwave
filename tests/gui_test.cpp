@@ -1341,11 +1341,18 @@ static void test_playback_ringbuffer() {
     REQUIRE("ring_overflow_capped", overflow_written <= 1024);
 }
 
-// --- Version defines: verify they're set correctly ---
+// --- Version defines: verify they're wired, not pinned to a release ---
 static void test_version_defines() {
-    REQUIRE("version_major", GW_VERSION_MAJOR == 2);
-    REQUIRE("version_minor", GW_VERSION_MINOR == 0);
-    REQUIRE("version_patch", GW_VERSION_PATCH == 0);
+    // Assert the macros EXIST and form a sane semantic version — not
+    // specific numbers, so a version bump doesn't fail the suite. (The
+    // old test hard-coded 2.0.0 and broke the moment the project version
+    // changed; the value lives in CMakeLists, which is the source of
+    // truth, and a test shouldn't duplicate it.)
+    const int major = GW_VERSION_MAJOR;
+    const int minor = GW_VERSION_MINOR;
+    const int patch = GW_VERSION_PATCH;
+    REQUIRE("version_nonnegative", major >= 0 && minor >= 0 && patch >= 0);
+    REQUIRE("version_not_all_zero", (major | minor | patch) != 0);
 
     // Build date should be a non-empty string
     const char* date = GW_BUILD_DATE;

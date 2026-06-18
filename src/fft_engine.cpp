@@ -10,6 +10,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <algorithm>
+#include <memory>     // std::make_unique (libc++ doesn't pull it transitively)
 
 #ifdef GW_USE_FFTW3
 #include <fftw3.h>

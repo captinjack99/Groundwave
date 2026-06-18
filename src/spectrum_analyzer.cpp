@@ -7,6 +7,7 @@
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
+#include <memory>     // std::make_unique (not transitive under libc++)
 
 namespace gw {
 

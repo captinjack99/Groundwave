@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <numeric>
 #include <complex>
+#include <limits>     // std::numeric_limits (not transitive under libc++)
 
 namespace gw {
 
@@ -47,8 +48,12 @@ inline float r_hh_mag(float delta_f_hz, float tau_rms_sec) {
     return 1.0f / std::sqrt(1.0f + x * x);
 }
 
-// Complex R_HH
-inline ComplexSample r_hh_complex(float delta_f_hz, float tau_rms_sec) {
+// Complex R_HH. Kept as the reference form alongside the magnitude
+// helper actually used by the real-valued Wiener weights; [[maybe_unused]]
+// because Clang's -Wunused-function flags an uncalled anonymous-namespace
+// inline (GCC and MSVC don't), and this is documentation worth keeping.
+[[maybe_unused]] inline ComplexSample r_hh_complex(float delta_f_hz,
+                                                   float tau_rms_sec) {
     float x = 2.0f * static_cast<float>(M_PI) * tau_rms_sec * delta_f_hz;
     // 1/(1+jx) = (1-jx)/(1+x²)
     float denom = 1.0f + x * x;
