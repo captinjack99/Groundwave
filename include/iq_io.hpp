@@ -145,10 +145,16 @@ public:
             hdr[40] | (hdr[41] << 8) | (hdr[42] << 16) | (hdr[43] << 24));
         size_t total_samples = data_bytes / sizeof(float);
         std::vector<float> raw(total_samples);
-        std::fread(raw.data(), sizeof(float), total_samples, f);
+        // The header's data_bytes can overstate (or lie about) what the
+        // file actually holds. Trust the ACTUAL float count read, so a
+        // truncated or hostile header can't leave uninitialized samples
+        // in the buffer; drop any trailing odd float so I/Q stay paired.
+        const size_t got = std::fread(raw.data(), sizeof(float),
+                                      total_samples, f);
         std::fclose(f);
+        raw.resize(got - (got & 1u));   // even count: whole I/Q pairs only
 
-        samples_.resize(total_samples / 2);
+        samples_.resize(raw.size() / 2);
         for (size_t i = 0; i < samples_.size(); ++i) {
             samples_[i] = ComplexSample(raw[2*i + 0], raw[2*i + 1]);
         }

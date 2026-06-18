@@ -669,9 +669,12 @@ void AudioEngine::syncConfig() {
         std::fseek(f, 0, SEEK_SET);
         if (fsize < 44) { std::fclose(f); file_sources_[i].reset(); continue; }
         std::vector<uint8_t> buf(static_cast<size_t>(fsize));
-        std::fread(buf.data(), 1, buf.size(), f);
+        const size_t got = std::fread(buf.data(), 1, buf.size(), f);
         std::fclose(f);
-        if (std::memcmp(buf.data(), "RIFF", 4) != 0 ||
+        // A short read (truncated or racing file) means the buffer tail is
+        // garbage — treat it as an unreadable source rather than parsing it.
+        if (got != buf.size() ||
+            std::memcmp(buf.data(), "RIFF", 4) != 0 ||
             std::memcmp(buf.data() + 8, "WAVE", 4) != 0) {
             file_sources_[i].reset();
             continue;

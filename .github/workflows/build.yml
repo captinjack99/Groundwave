@@ -88,6 +88,14 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     continue-on-error: true
+    # arm64 brew prefix. CPATH/LIBRARY_PATH put opus (and any other brew
+    # lib) on the compiler's own search path, so <opus/opus.h> resolves
+    # regardless of how CMake's Opus discovery (CONFIG vs pkg-config)
+    # shook out — the prefix-path approach alone didn't reach the compile
+    # line. Applies to every step in the job.
+    env:
+      CPATH: /opt/homebrew/include
+      LIBRARY_PATH: /opt/homebrew/lib
     steps:
       - uses: actions/checkout@v4
 
@@ -95,9 +103,6 @@ jobs:
         run: brew install opus qt@6 cmake ninja pkg-config
 
       - name: Configure
-        # Brew's opus ships a pkg-config .pc, not a CMake config, and the
-        # arm64 prefix isn't on the default search path — point both the
-        # CMake prefix and PKG_CONFIG_PATH at it so opus/opus.h resolves.
         run: |
           export PKG_CONFIG_PATH="$(brew --prefix opus)/lib/pkgconfig:$PKG_CONFIG_PATH"
           cmake -B build -G Ninja \
