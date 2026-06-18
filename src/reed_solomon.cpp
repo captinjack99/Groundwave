@@ -242,8 +242,13 @@ int ReedSolomon::decode(uint8_t* block, size_t data_len) const {
 
 std::vector<uint8_t> ReedSolomon::encodeCopy(const uint8_t* data,
                                               size_t data_len) const {
-    std::vector<uint8_t> block(data_len + PARITY_BYTES, 0);
-    std::memcpy(block.data(), data, data_len);
+    // Range-construct the data prefix, then grow for parity — avoids a
+    // raw memcpy whose size GCC's -O3 _FORTIFY stringop-overflow pass
+    // mis-bounds (it derives data_len could be up to SIZE_MAX-16 from the
+    // vector-sizing no-overflow constraint and flags it against
+    // PTRDIFF_MAX, a known false positive; the copy is always in-bounds).
+    std::vector<uint8_t> block(data, data + data_len);
+    block.resize(data_len + PARITY_BYTES, 0);
     encode(block.data(), data_len);
     return block;
 }

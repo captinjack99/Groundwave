@@ -12,7 +12,9 @@ permissions:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    # windows-2022, not -latest: -latest (windows-2025) has no VS instance
+    # the "Visual Studio 17 2022" generator can find. Matches build.yml.
+    runs-on: windows-2022
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
